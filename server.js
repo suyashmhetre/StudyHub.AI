@@ -13,6 +13,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const Busboy = require('busboy');
+
 const { createStore, passwordHash, id, now, defaultDb } = require('./lib/store');
 const { createFileStorage } = require('./lib/storage');
 const { extractText, chunkText } = require('./lib/document');
@@ -38,6 +39,9 @@ let initialized = false;
 let initializePromise = null;
 
 async function initialize() {
+  console.log("MONGODB_URI exists:", !!process.env.MONGODB_URI);
+console.log("MONGODB_URI prefix:", process.env.MONGODB_URI?.slice(0, 25));
+console.log("MONGODB_DATABASE:", process.env.MONGODB_DATABASE);
   if (initialized) return;
 
   if (!initializePromise) {
