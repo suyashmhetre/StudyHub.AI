@@ -277,8 +277,4 @@ async function start() {
 if (process.env.VERCEL !== "1") {
     start().catch(console.error);
 }
-module.exports = {
-    createServer,
-    start,
-    defaultDb
-};
+module.exports = createServer();
