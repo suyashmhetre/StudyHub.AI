@@ -34,7 +34,40 @@ const SUPPORTED_EXTENSIONS = new Map([
 
 let store;
 let fileStorage;
+let initialized = false;
+let initializePromise = null;
 
+async function initialize() {
+  if (initialized) return;
+
+  if (!initializePromise) {
+    initializePromise = (async () => {
+      store = await createStore({
+        mongoUri: process.env.MONGODB_URI,
+        databaseName: process.env.MONGODB_DATABASE,
+        dataFile: path.join(DATA_DIR, 'db.json')
+      });
+
+      fileStorage = await createFileStorage({
+        storageProvider: process.env.STORAGE_PROVIDER,
+        localRoot: path.join(DATA_DIR, 'uploads'),
+        s3Bucket: process.env.S3_BUCKET || process.env.AWS_S3_BUCKET,
+        s3Key: process.env.S3_KEY || process.env.AWS_ACCESS_KEY_ID,
+        s3Secret: process.env.S3_SECRET || process.env.AWS_SECRET_ACCESS_KEY,
+        s3Endpoint: process.env.S3_ENDPOINT,
+        s3Region: process.env.S3_REGION || process.env.AWS_REGION
+      });
+
+      initialized = true;
+
+      console.log(
+        `StudyHub initialized (${store.kind} data, ${fileStorage.kind} files)`
+      );
+    })();
+  }
+
+  await initializePromise;
+}
 function clampText(value, max) { return String(value || '').trim().slice(0, max); }
 function safeUser(user) { if (!user) return null; const { passwordHash: _passwordHash, ...safe } = user; return safe; }
 function verifyPassword(password, stored) {
@@ -124,6 +157,7 @@ async function serveDownload(req, res, resourceId, user) {
 }
 
 async function handleApi(req, res, pathname) {
+  await initialize();
   const { method } = req;
   if (method === 'GET' && pathname === '/api/health') return sendJson(res, 200, { status: 'ok', database: store.kind, storage: fileStorage.kind, aiConfigured: Boolean(GEMINI_API_KEY) });
   if (method === 'GET' && pathname === '/api/session') return sendJson(res, 200, { user: safeUser(await sessionUser(req)) });
@@ -259,19 +293,30 @@ function createServer() {
   });
 }
 
+//async function start() {
+  //store = await createStore({ mongoUri: process.env.MONGODB_URI, databaseName: process.env.MONGODB_DATABASE, dataFile: path.join(DATA_DIR, 'db.json') });
+  //fileStorage = await createFileStorage({
+   // storageProvider: process.env.STORAGE_PROVIDER,
+   // localRoot: path.join(DATA_DIR, 'uploads'),
+   // s3Bucket: process.env.S3_BUCKET || process.env.AWS_S3_BUCKET,
+   // s3Key: process.env.S3_KEY || process.env.AWS_ACCESS_KEY_ID,
+   // s3Secret: process.env.S3_SECRET || process.env.AWS_SECRET_ACCESS_KEY,
+    //s3Endpoint: process.env.S3_ENDPOINT,
+   // s3Region: process.env.S3_REGION || process.env.AWS_REGION
+  //});
+  //const server = createServer(); await new Promise((resolve) => server.listen(PORT, resolve)); console.log(`StudyHub AI is running at http://localhost:${PORT} (${store.kind} data, ${fileStorage.kind} files)`); return server;
 async function start() {
-  store = await createStore({ mongoUri: process.env.MONGODB_URI, databaseName: process.env.MONGODB_DATABASE, dataFile: path.join(DATA_DIR, 'db.json') });
-  fileStorage = await createFileStorage({
-    storageProvider: process.env.STORAGE_PROVIDER,
-    localRoot: path.join(DATA_DIR, 'uploads'),
-    s3Bucket: process.env.S3_BUCKET || process.env.AWS_S3_BUCKET,
-    s3Key: process.env.S3_KEY || process.env.AWS_ACCESS_KEY_ID,
-    s3Secret: process.env.S3_SECRET || process.env.AWS_SECRET_ACCESS_KEY,
-    s3Endpoint: process.env.S3_ENDPOINT,
-    s3Region: process.env.S3_REGION || process.env.AWS_REGION
-  });
-  const server = createServer(); await new Promise((resolve) => server.listen(PORT, resolve)); console.log(`StudyHub AI is running at http://localhost:${PORT} (${store.kind} data, ${fileStorage.kind} files)`); return server;
+  await initialize();
+
+  const server = createServer();
+
+  await new Promise((resolve) => server.listen(PORT, resolve));
+
+  console.log(`StudyHub AI is running at http://localhost:${PORT}`);
+
+  return server;
 }
+//}
 
 //if (require.main === module) start().catch((error) => { console.error('StudyHub could not start:', error); process.exitCode = 1; });
 if (process.env.VERCEL !== "1") {
