@@ -1,0 +1,7 @@
+node_modules/
+.npm-cache/
+.env
+data/uploads/
+data/db.json
+work/
+tempCodeRunnerFile.js
