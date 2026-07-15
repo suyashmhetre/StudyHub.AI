@@ -5,3 +5,5 @@ data/uploads/
 data/db.json
 work/
 tempCodeRunnerFile.js
+.vercel
+.env*

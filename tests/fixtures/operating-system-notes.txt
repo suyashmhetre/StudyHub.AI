@@ -1,5 +1,0 @@
-Deadlock is a state where processes wait indefinitely for resources held by each other.
-
-The four necessary conditions for a deadlock are mutual exclusion, hold and wait, no preemption, and circular wait.
-
-Deadlock prevention breaks at least one necessary condition. Deadlock avoidance uses the safety algorithm to grant an allocation only when the state remains safe.

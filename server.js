@@ -273,5 +273,12 @@ async function start() {
   const server = createServer(); await new Promise((resolve) => server.listen(PORT, resolve)); console.log(`StudyHub AI is running at http://localhost:${PORT} (${store.kind} data, ${fileStorage.kind} files)`); return server;
 }
 
-if (require.main === module) start().catch((error) => { console.error('StudyHub could not start:', error); process.exitCode = 1; });
-module.exports = { createServer, start, defaultDb };
+//if (require.main === module) start().catch((error) => { console.error('StudyHub could not start:', error); process.exitCode = 1; });
+if (process.env.VERCEL !== "1") {
+    start().catch(console.error);
+}
+module.exports = {
+    createServer,
+    start,
+    defaultDb
+};
