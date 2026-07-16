@@ -72,10 +72,17 @@ async function initialize() {
 
         console.log("Initialization complete.");
       } catch (err) {
-        console.error("INITIALIZATION FAILED");
-        console.error(err);
-        throw err;
-      }
+    console.error("========== INITIALIZATION FAILED ==========");
+    console.error(err);
+    console.error(err.stack);
+
+    if (err.cause) {
+        console.error("CAUSE:");
+        console.error(err.cause);
+    }
+
+    throw err;
+}
     })();
   }
 
@@ -195,9 +202,22 @@ async function handleApi(req, res, pathname) {
       const q = url.searchParams.get('q') || '';
       const groups = await store.listPublicGroups(q);
       return sendJson(res, 200, { groups });
-    } catch (err) {
-      return sendError(res, 500, 'Could not list public groups.');
+    }catch (error) {
+    console.error("========== REQUEST FAILED ==========");
+    console.error(error);
+    console.error(error.stack);
+
+    if (error.cause) {
+        console.error("CAUSE:");
+        console.error(error.cause);
     }
+
+    return sendError(
+        res,
+        500,
+        error.message || "Unexpected server error."
+    );
+}
   }
 
   const user = await requireUser(req, res); if (!user) return;
