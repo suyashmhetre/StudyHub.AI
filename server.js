@@ -221,7 +221,20 @@ async function handleApi(req, res, pathname) {
   }
 
   const user = await requireUser(req, res); if (!user) return;
-  if (method === 'GET' && pathname === '/api/dashboard') return sendJson(res, 200, await store.dashboard(user.id));
+if (method === 'GET' && pathname === '/api/dashboard') {
+    try {
+        const dashboard = await store.dashboard(user.id);
+        return sendJson(res, 200, dashboard);
+    } catch (err) {
+        console.error("DASHBOARD ERROR");
+        console.error(err);
+        console.error(err.stack);
+
+        return sendJson(res, 500, {
+            error: err.message
+        });
+    }
+}
   if (method === 'GET' && pathname === '/api/groups') return sendJson(res, 200, { groups: (await store.userGroups(user.id)).filter(Boolean) });
   if (method === 'POST' && pathname === '/api/groups') {
     const input = await readJson(req); const name = clampText(input.name, 100); const subject = clampText(input.subject, 80); const description = clampText(input.description, 400);
