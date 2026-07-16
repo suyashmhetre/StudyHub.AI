@@ -182,6 +182,7 @@ html,
     <link rel="stylesheet" href="/styles.css" />
     <link rel="stylesheet" href="/modern.css" />
   </head>
+
   <body>
 <div id="startup-loader">
     <div class="loader-logo">
@@ -201,5 +202,12 @@ html,
     <div id="app" aria-live="polite"></div>
     <div id="toast-region" class="toast-region" aria-live="assertive"></div>
     <script src="/app.js" defer></script>
+      <div id="action-loader" class="action-loader hidden">
+    <div class="loader-card">
+        <div class="loader-spinner"></div>
+        <h3 id="loader-title">Loading...</h3>
+        <p>Please wait</p>
+    </div>
+</div>
   </body>
 </html>

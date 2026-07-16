@@ -69,17 +69,69 @@ function getCurrentDate() {
 function initials(name = 'Member') {
   return String(name).split(/\s+/).filter(Boolean).map((part) => part[0]).slice(0, 2).join('').toUpperCase() || 'M';
 }
+function showLoader(message = "Please wait...") {
 
-async function request(url, options = {}) {
-  const isForm = options.body instanceof FormData;
-  const response = await fetch(url, {
-    headers: { ...(isForm ? {} : { 'Content-Type': 'application/json' }), ...(options.headers || {}) },
-    ...options
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || 'Something went wrong.');
-  return data;
+    const loader = document.getElementById("action-loader");
+
+    if (!loader) return;
+
+    const title = document.getElementById("loader-title");
+
+    if (title) {
+        title.textContent = message;
+    }
+
+    loader.classList.remove("hidden");
 }
+
+function hideLoader() {
+
+    const loader = document.getElementById("action-loader");
+
+    if (!loader) return;
+
+    loader.classList.add("hidden");
+}
+async function request(url, options = {}) {
+
+    const isForm = options.body instanceof FormData;
+
+    // Don't show loader for lightweight requests
+    const skipLoader =
+        options.skipLoader ||
+        url === "/api/session";
+
+    if (!skipLoader) {
+        showLoader();
+    }
+
+    try {
+
+        const response = await fetch(url, {
+            headers: {
+                ...(isForm ? {} : { "Content-Type": "application/json" }),
+                ...(options.headers || {})
+            },
+            ...options
+        });
+
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+            throw new Error(data.error || "Something went wrong.");
+        }
+
+        return data;
+
+    } finally {
+
+        if (!skipLoader) {
+            hideLoader();
+        }
+
+    }
+}
+
 
 function notify(message, isError = false) {
   const toast = document.createElement('div');
@@ -258,8 +310,36 @@ function renderStudy() {
 }
 
 function renderSimple(page) {
-  const content = page === 'notifications' ? `<div class="page"><section class="page-heading"><div><div class="eyebrow">Stay informed</div><h1>Notifications</h1><p>Nothing new right now. New resources, discussions and deadlines will appear here.</p></div></section><div class="empty">You’re all caught up ✦</div></div>` : `<div class="page"><section class="page-heading"><div><div class="eyebrow">Your account</div><h1>Settings</h1><p>Profile settings are ready for a production authentication provider.</p></div></section><div class="card" style="padding:24px"><h2>${escapeHtml(state.user.name)}</h2><p class="subtext">${escapeHtml(state.user.email)}</p><button class="button button-danger" style="margin-top:12px" data-action="logout">Sign out</button></div></div>`;
+  const content = page === 'notifications' ?`
+<div class="page">
+
+    <section class="page-heading">
+        <div>
+            <div class="eyebrow">Notifications</div>
+            <h1>Notification Center</h1>
+        </div>
+    </section>
+
+    <div class="card" style="text-align:center;padding:50px 30px;">
+        <div style="font-size:60px;">🔔</div>
+
+        <h2 style="margin:15px 0;">Coming Soon</h2>
+
+        <p style="color:var(--text-secondary);max-width:500px;margin:0 auto 25px;">
+            The Notification Center is currently under development.
+            Soon you'll receive updates about assignments, resources,
+            discussions, invitations, and more.
+        </p>
+
+        <button class="btn" disabled>
+            🚧 In Development
+        </button>
+    </div>
+
+</div>
+` : `<div class="page"><section class="page-heading"><div><div class="eyebrow">Your account</div><h1>Settings</h1><p>Profile settings are ready for a production authentication provider.</p></div></section><div class="card" style="padding:24px"><h2>${escapeHtml(state.user.name)}</h2><p class="subtext">${escapeHtml(state.user.email)}</p><button class="button button-danger" style="margin-top:12px" data-action="logout">Sign out</button></div></div>`;
   renderShell(content, page === 'notifications' ? 'Notifications' : 'Settings');
+  ;
 }
 
 function render() {
