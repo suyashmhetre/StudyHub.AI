@@ -24,7 +24,6 @@ const PUBLIC_DIR = path.join(ROOT, 'public');
 const DATA_DIR = path.join(ROOT, 'data');
 const PORT = Number(process.env.PORT || 4173);
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
-const sessions = new Map();
 const MIME_TYPES = { '.css': 'text/css; charset=utf-8', '.html': 'text/html; charset=utf-8', '.js': 'application/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' };
 const SUPPORTED_EXTENSIONS = new Map([
   ['pdf', 'application/pdf'],
@@ -97,7 +96,18 @@ function verifyPassword(password, stored) {
   return candidate.length === storedHash.length && crypto.timingSafeEqual(Buffer.from(candidate, 'hex'), Buffer.from(storedHash, 'hex'));
 }
 function getCookie(req, name) { const hit = String(req.headers.cookie || '').split(';').map((item) => item.trim()).find((item) => item.startsWith(`${name}=`)); return hit ? decodeURIComponent(hit.slice(name.length + 1)) : null; }
-async function sessionUser(req) { const token = getCookie(req, 'studyhub_session'); return token ? store.findUserById(sessions.get(token)) : null; }
+async function sessionUser(req) {
+
+    const token = getCookie(req, "studyhub_session");
+
+    if (!token) return null;
+
+    const session = await store.getSession(token);
+
+    if (!session) return null;
+
+    return await store.findUserById(session.userId);
+}
 async function requireUser(req, res) { const user = await sessionUser(req); if (!user) { sendError(res, 401, 'Please sign in to continue.'); return null; } return user; }
 function sendJson(res, status, body, headers = {}) { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...headers }); res.end(JSON.stringify(body)); }
 function sendError(res, status, error) { sendJson(res, status, { error }); }
@@ -186,12 +196,12 @@ async function handleApi(req, res, pathname) {
     if (name.length < 2 || !/^\S+@\S+\.\S+$/.test(email) || password.length < 8) return sendError(res, 400, 'Enter a name, valid email, and password of at least 8 characters.');
     if (await store.findUserByEmail(email)) return sendError(res, 409, 'An account already uses this email.');
     const user = await store.createUser({ name, email, passwordHash: passwordHash(password), avatar: name.split(/\s+/).map((part) => part[0]).slice(0, 2).join('').toUpperCase() });
-    const token = crypto.randomUUID(); sessions.set(token, user.id); return sendJson(res, 201, { user: safeUser(user) }, { 'Set-Cookie': `studyhub_session=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800` });
+    const token = await store.createSession(user.id); return sendJson(res, 201, { user: safeUser(user) }, { 'Set-Cookie': `studyhub_session=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800` });
   }
   if (method === 'POST' && pathname === '/api/auth/login') {
     const input = await readJson(req); const user = await store.findUserByEmail(String(input.email || '').trim().toLowerCase());
     if (!user || !verifyPassword(String(input.password || ''), user.passwordHash)) return sendError(res, 401, 'Incorrect email or password.');
-    const token = crypto.randomUUID(); sessions.set(token, user.id); return sendJson(res, 200, { user: safeUser(user) }, { 'Set-Cookie': `studyhub_session=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800` });
+    const token = await store.createSession(user.id); return sendJson(res, 200, { user: safeUser(user) }, { 'Set-Cookie': `studyhub_session=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800` });
   }
   if (method === 'POST' && pathname === '/api/auth/logout') { const token = getCookie(req, 'studyhub_session'); if (token) sessions.delete(token); return sendJson(res, 200, { ok: true }, { 'Set-Cookie': 'studyhub_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0' }); }
 
