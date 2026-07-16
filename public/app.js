@@ -1,3 +1,4 @@
+console.log("APP JS LOADED");
 const app = document.querySelector('#app');
 const toastRegion = document.querySelector('#toast-region');
 
@@ -466,33 +467,50 @@ setTimeout(()=>{
 
 boot();*/
 async function boot() {
+  
+    const loader = document.getElementById("startup-loader");
 
-    console.log("1");
+    try {
+        
 
-    const session = await request("/api/session");
+        const session = await request("/api/session");
 
-    console.log("2");
+        
 
-    state.user = session.user;
+        state.user = session.user;
 
-    if (state.user) {
+        if (state.user) {
+            
 
-        console.log("3");
+            render();
 
-        render();
+            
 
-        await refreshDashboard();
+            await refreshDashboard();
 
-        console.log("4");
+            
 
-        render();
+            render();
+        } else {
+            
 
-    } else {
+            renderAuth();
 
-        console.log("5");
+            
+        }
+
+    } catch (err) {
+        console.error("BOOT ERROR", err);
 
         renderAuth();
-    }
+    } finally {
+        
 
-    console.log("6");
+        if (loader) {
+            loader.classList.add("hide");
+
+            setTimeout(() => loader.remove(), 300);
+        }
+    }
 }
+boot();
