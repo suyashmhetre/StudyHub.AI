@@ -40,37 +40,46 @@ let initializePromise = null;
 
 async function initialize() {
   console.log("MONGODB_URI exists:", !!process.env.MONGODB_URI);
-console.log("MONGODB_URI prefix:", process.env.MONGODB_URI?.slice(0, 25));
-console.log("MONGODB_DATABASE:", process.env.MONGODB_DATABASE);
+  console.log("MONGODB_URI prefix:", process.env.MONGODB_URI?.slice(0, 35));
+  console.log("MONGODB_DATABASE:", process.env.MONGODB_DATABASE);
+
   if (initialized) return;
 
   if (!initializePromise) {
     initializePromise = (async () => {
-      store = await createStore({
-        mongoUri: process.env.MONGODB_URI,
-        databaseName: process.env.MONGODB_DATABASE,
-        dataFile: path.join(DATA_DIR, 'db.json')
-      });
+      try {
+        console.log("Creating Mongo store...");
 
-      fileStorage = await createFileStorage({
-        storageProvider: process.env.STORAGE_PROVIDER,
-        localRoot: path.join(DATA_DIR, 'uploads'),
-        s3Bucket: process.env.S3_BUCKET || process.env.AWS_S3_BUCKET,
-        s3Key: process.env.S3_KEY || process.env.AWS_ACCESS_KEY_ID,
-        s3Secret: process.env.S3_SECRET || process.env.AWS_SECRET_ACCESS_KEY,
-        s3Endpoint: process.env.S3_ENDPOINT,
-        s3Region: process.env.S3_REGION || process.env.AWS_REGION
-      });
+        store = await createStore({
+          mongoUri: process.env.MONGODB_URI,
+          databaseName: process.env.MONGODB_DATABASE,
+          dataFile: path.join(DATA_DIR, "db.json")
+        });
 
-      initialized = true;
+        console.log("Mongo store created.");
 
-      console.log(
-        `StudyHub initialized (${store.kind} data, ${fileStorage.kind} files)`
-      );
+        fileStorage = await createFileStorage({
+          storageProvider: process.env.STORAGE_PROVIDER,
+          localRoot: path.join(DATA_DIR, "uploads"),
+          s3Bucket: process.env.S3_BUCKET || process.env.AWS_S3_BUCKET,
+          s3Key: process.env.S3_KEY || process.env.AWS_ACCESS_KEY_ID,
+          s3Secret: process.env.S3_SECRET || process.env.AWS_SECRET_ACCESS_KEY,
+          s3Endpoint: process.env.S3_ENDPOINT,
+          s3Region: process.env.S3_REGION || process.env.AWS_REGION
+        });
+
+        initialized = true;
+
+        console.log("Initialization complete.");
+      } catch (err) {
+        console.error("INITIALIZATION FAILED");
+        console.error(err);
+        throw err;
+      }
     })();
   }
 
-  await initializePromise;
+  return initializePromise;
 }
 function clampText(value, max) { return String(value || '').trim().slice(0, max); }
 function safeUser(user) { if (!user) return null; const { passwordHash: _passwordHash, ...safe } = user; return safe; }
