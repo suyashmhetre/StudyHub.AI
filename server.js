@@ -203,8 +203,23 @@ async function handleApi(req, res, pathname) {
     if (!user || !verifyPassword(String(input.password || ''), user.passwordHash)) return sendError(res, 401, 'Incorrect email or password.');
     const token = await store.createSession(user.id); return sendJson(res, 200, { user: safeUser(user) }, { 'Set-Cookie': `studyhub_session=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800` });
   }
-  if (method === 'POST' && pathname === '/api/auth/logout') { const token = getCookie(req, 'studyhub_session'); if (token) sessions.delete(token); return sendJson(res, 200, { ok: true }, { 'Set-Cookie': 'studyhub_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0' }); }
+  if (method === "POST" && pathname === "/api/auth/logout") {
+    const token = getCookie(req, "studyhub_session");
 
+    if (token) {
+        await store.deleteSession(token);
+    }
+
+    return sendJson(
+        res,
+        200,
+        { ok: true },
+        {
+            "Set-Cookie":
+                "studyhub_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
+        }
+    );
+}
   // Public API: list discoverable public groups (no auth required)
   if (method === 'GET' && pathname === '/api/public-groups') {
     try {
