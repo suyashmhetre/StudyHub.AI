@@ -446,7 +446,7 @@ function updateRelativeDates() {
   });
 }
 
-async function boot() {
+/*async function boot() {
   try {
     const session = await request('/api/session');
     state.user = session.user;
@@ -464,4 +464,35 @@ setTimeout(()=>{
   setInterval(updateRelativeDates, 60000);
 }
 
-boot();
+boot();*/
+async function boot() {
+
+    console.log("1");
+
+    const session = await request("/api/session");
+
+    console.log("2");
+
+    state.user = session.user;
+
+    if (state.user) {
+
+        console.log("3");
+
+        render();
+
+        await refreshDashboard();
+
+        console.log("4");
+
+        render();
+
+    } else {
+
+        console.log("5");
+
+        renderAuth();
+    }
+
+    console.log("6");
+}
