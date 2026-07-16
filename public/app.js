@@ -506,11 +506,15 @@ async function boot() {
     } finally {
         
 
-        if (loader) {
-            loader.classList.add("hide");
+const loader = document.getElementById("startup-loader");
 
-            setTimeout(() => loader.remove(), 300);
-        }
+loader.style.transition = "opacity .45s ease";
+
+loader.style.opacity = "0";
+
+setTimeout(() => {
+    loader.remove();
+}, 450);
     }
 }
 boot();
