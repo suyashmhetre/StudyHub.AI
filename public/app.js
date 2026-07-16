@@ -141,11 +141,7 @@ function renderAuth(mode = 'login') {
         </div>
       </section>
     </main>`;
-    loader.classList.add("hide");
 
-setTimeout(()=>{
-    loader.remove();
-},300);
 }
 
 function navItem(page, label) {
@@ -456,6 +452,13 @@ async function boot() {
     state.user = session.user;
     if (state.user) { render(); await refreshDashboard(); render(); } else renderAuth();
   } catch (error) { renderAuth(); notify('Could not reach the local server.', true); }
+  finally{
+        loader.classList.add("hide");
+
+setTimeout(()=>{
+    loader.remove();
+},300);
+  }
   
   // Update relative dates every 60 seconds
   setInterval(updateRelativeDates, 60000);
