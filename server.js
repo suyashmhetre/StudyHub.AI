@@ -3,10 +3,7 @@ require('dotenv').config();
 // Read and normalize important environment variables
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY ? String(process.env.GEMINI_API_KEY).trim() : null;
 const GEMINI_MODEL = process.env.GEMINI_MODEL ? String(process.env.GEMINI_MODEL).trim() : 'gemini-flash-latest';
-console.log("===== GEMINI CONFIG =====");
-console.log("API Key Loaded:", !!GEMINI_API_KEY);
-console.log("Model:", GEMINI_MODEL);
-console.log("=========================");
+
 
 const http = require('node:http');
 const crypto = require('node:crypto');
@@ -38,16 +35,14 @@ let initialized = false;
 let initializePromise = null;
 
 async function initialize() {
-  console.log("MONGODB_URI exists:", !!process.env.MONGODB_URI);
-  console.log("MONGODB_URI prefix:", process.env.MONGODB_URI?.slice(0, 35));
-  console.log("MONGODB_DATABASE:", process.env.MONGODB_DATABASE);
+
 
   if (initialized) return;
 
   if (!initializePromise) {
     initializePromise = (async () => {
       try {
-        console.log("Creating Mongo store...");
+        
 
         store = await createStore({
           mongoUri: process.env.MONGODB_URI,
@@ -55,7 +50,7 @@ async function initialize() {
           dataFile: path.join(DATA_DIR, "db.json")
         });
 
-        console.log("Mongo store created.");
+        
 
         fileStorage = await createFileStorage({
           storageProvider: process.env.STORAGE_PROVIDER,
@@ -69,7 +64,7 @@ async function initialize() {
 
         initialized = true;
 
-        console.log("Initialization complete.");
+        
       } catch (err) {
     console.error("========== INITIALIZATION FAILED ==========");
     console.error(err);
@@ -383,7 +378,7 @@ async function start() {
 
   await new Promise((resolve) => server.listen(PORT, resolve));
 
-  console.log(`StudyHub AI is running at http://localhost:${PORT}`);
+  
 
   return server;
 }
