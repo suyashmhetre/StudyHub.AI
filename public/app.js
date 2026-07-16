@@ -112,6 +112,7 @@ function button(label, action, extra = '') {
 }
 
 function renderAuth(mode = 'login') {
+
   const isRegister = mode === 'register';
   app.innerHTML = `
     <main class="auth-shell">
@@ -140,6 +141,11 @@ function renderAuth(mode = 'login') {
         </div>
       </section>
     </main>`;
+    loader.classList.add("hide");
+
+setTimeout(()=>{
+    loader.remove();
+},300);
 }
 
 function navItem(page, label) {
