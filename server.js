@@ -33,6 +33,7 @@ let store;
 let fileStorage;
 let initialized = false;
 let initializePromise = null;
+let pendingIndexingPromise = null;
 
 async function initialize() {
 
@@ -63,6 +64,7 @@ async function initialize() {
         });
 
         initialized = true;
+        void indexPendingResources();
 
         
       } catch (err) {
@@ -148,6 +150,45 @@ async function groupAccess(req, res, groupId, user) {
   return access;
 }
 
+async function indexResource(resource, buffer) {
+  try {
+    await store.updateResourceIndexStatus(resource.id, 'indexing', null);
+    const text = await extractText({ buffer, mimeType: resource.mimeType, fileName: resource.fileName });
+    if (text.length < 20) {
+      const updatedResource = await store.updateResourceIndexStatus(resource.id, 'needs_ai', 'No usable text was found in this file.');
+      return { resource: updatedResource, indexedChunks: 0 };
+    }
+    const chunks = chunkText(text).map((content, position) => ({
+      id: id('chunk'), groupId: resource.groupId, resourceId: resource.id, resourceTitle: resource.title, position, content, createdAt: now()
+    }));
+    await store.addChunks(resource.id, chunks);
+    const updatedResource = await store.updateResource(resource.id, { indexStatus: 'indexed', indexError: null, textLength: text.length });
+    return { resource: updatedResource, indexedChunks: chunks.length };
+  } catch (error) {
+    const updatedResource = await store.updateResourceIndexStatus(resource.id, 'failed', String(error.message || error));
+    return { resource: updatedResource, indexedChunks: 0 };
+  }
+}
+
+async function indexPendingResources() {
+  if (pendingIndexingPromise) return pendingIndexingPromise;
+  pendingIndexingPromise = (async () => {
+    while (true) {
+      const pendingResources = await store.getResourcesByIndexStatus('pending', 10);
+      if (!pendingResources.length) return;
+      for (const resource of pendingResources) {
+        try {
+          const buffer = await fileStorage.download(resource.storagePath);
+          await indexResource(resource, buffer);
+        } catch (error) {
+          await store.updateResourceIndexStatus(resource.id, 'failed', String(error.message || error));
+        }
+      }
+    }
+  })().catch((error) => console.error('Failed to index pending resources:', error)).finally(() => { pendingIndexingPromise = null; });
+  return pendingIndexingPromise;
+}
+
 async function addUploadedResource(req, res, groupId, user) {
   const access = await groupAccess(req, res, groupId, user); if (!access) return;
   const { fields, file } = await readMultipart(req);
@@ -155,15 +196,13 @@ async function addUploadedResource(req, res, groupId, user) {
   const title = clampText(fields.title, 120);
   if (title.length < 3) return sendError(res, 400, 'A resource title of at least 3 characters is required.');
   const storage = await fileStorage.upload({ groupId, fileName: file.name, buffer: file.buffer, mimeType: canonicalMimeType });
-  // Defer text extraction to background worker to avoid blocking uploads.
-  let text = ''; let indexStatus = 'pending'; let indexError = null;
   const resource = {
     id: id('res'), groupId, title, fileName: file.name, type: displayType, mimeType: canonicalMimeType, storagePath: storage.storagePath,
-    subject: clampText(fields.subject, 80) || access.group.subject, unit: clampText(fields.unit, 40) || 'General', tags: String(fields.tags || '').split(',').map((tag) => clampText(tag, 24)).filter(Boolean).slice(0, 8), description: clampText(fields.description, 400), size: file.buffer.length, uploaderId: user.id, downloads: 0, indexStatus, indexError, textLength: text.length, createdAt: now()
+    subject: clampText(fields.subject, 80) || access.group.subject, unit: clampText(fields.unit, 40) || 'General', tags: String(fields.tags || '').split(',').map((tag) => clampText(tag, 24)).filter(Boolean).slice(0, 8), description: clampText(fields.description, 400), size: file.buffer.length, uploaderId: user.id, downloads: 0, indexStatus: 'indexing', indexError: null, textLength: 0, createdAt: now()
   };
-  const chunks = [];
-  await store.addResource(resource, chunks);
-  return sendJson(res, 201, { resource, indexedChunks: chunks.length });
+  await store.addResource(resource, []);
+  const result = await indexResource(resource, file.buffer);
+  return sendJson(res, 201, result);
 }
 
 async function serveDownload(req, res, resourceId, user) {
