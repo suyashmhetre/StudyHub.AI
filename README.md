@@ -62,6 +62,16 @@ Copy `.env.example` to `.env`, then provide the three cloud services:
 
 When no cloud storage configuration is supplied, development mode uses `data/db.json` and `data/uploads/`. This fallback is intentionally not for production.
 
+### Vercel deployment
+
+Vercel Functions have a read-only filesystem, so add these environment variables in **Project Settings → Environment Variables** for each deployed environment (Production and Preview, if used):
+
+- `MONGODB_URI` and `MONGODB_DATABASE`
+- `STORAGE_PROVIDER=s3`
+- `S3_BUCKET`, `S3_KEY`, `S3_SECRET`, and `S3_REGION`
+
+Redeploy after changing environment variables. The upload route indexes files during the request and is configured with a 60-second Vercel function duration for document extraction. Confirm the deployment is using persistent services at `/api/health`; it should report `database: "mongo"` and `storage: "s3"`.
+
 See [data-and-ai-architecture.md](docs/data-and-ai-architecture.md) for the full data flow, collection model, security boundaries, and setup.
 
 ## API surface
