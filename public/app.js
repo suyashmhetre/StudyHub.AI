@@ -472,21 +472,24 @@ async function populatePublicGroups(query) {
 }
 
 
-async function refreshDashboard() {
-  const [dashboard, groupsResponse] = await Promise.all([request('/api/dashboard'), request('/api/groups')]);
+async function refreshDashboard({ skipLoader = false } = {}) {
+  const [dashboard, groupsResponse] = await Promise.all([
+    request('/api/dashboard', { skipLoader }),
+    request('/api/groups', { skipLoader })
+  ]);
   state.dashboard = dashboard; state.groups = groupsResponse.groups;
 }
 
 async function openGroup(groupId) {
   state.activeGroup = state.groups.find((group) => group.id === groupId) || { id: groupId };
   state.groupData = null; state.groupTab = 'overview'; state.page = 'group'; render();
-  const data = await request(`/api/groups/${groupId}`); state.groupData = data; state.activeGroup = data.group; render();
+  const data = await request(`/api/groups/${groupId}`, { skipLoader: true }); state.groupData = data; state.activeGroup = data.group; render();
 }
 
 async function navigate(page) {
   state.page = page;
   state.mobileSidebarOpen = false;
-  if (page === 'dashboard') { state.dashboard = null; render(); await refreshDashboard(); }
+  if (page === 'dashboard') { state.dashboard = null; render(); await refreshDashboard({ skipLoader: true }); }
   if (page === 'groups' || page === 'study') { render(); }
   if (page !== 'dashboard') render();
   if (page === 'dashboard') render();
@@ -497,7 +500,7 @@ async function submitForm(form) {
   const values = Object.fromEntries(new FormData(form).entries());
   try {
     if (type === 'login' || type === 'register') {
-      const data = await request(`/api/auth/${type}`, { method: 'POST', body: JSON.stringify(values) }); state.user = data.user; state.page = 'dashboard'; state.dashboard = null; render(); await refreshDashboard(); render(); return;
+      const data = await request(`/api/auth/${type}`, { method: 'POST', body: JSON.stringify(values) }); state.user = data.user; state.page = 'dashboard'; state.dashboard = null; render(); await refreshDashboard({ skipLoader: true }); render(); return;
     }
     if (type === 'create-group') { const data = await request('/api/groups', { method: 'POST', body: JSON.stringify(values) }); closeModal(); await refreshDashboard(); notify(`“${data.group.name}” is ready.`); await openGroup(data.group.id); return; }
     if (type === 'join-group') { const data = await request('/api/groups/join', { method: 'POST', body: JSON.stringify(values) }); closeModal(); await refreshDashboard(); notify(`You joined “${data.group.name}”.`); await openGroup(data.group.id); return; }
@@ -605,7 +608,11 @@ document.addEventListener('click', async (event) => {
       state.chatHistory.push({ role: 'user', text: question });
       state.isThinking = true;
       renderStudy();
-      const response = await request('/api/study', { method: 'POST', body: JSON.stringify({ groupId, question }) });
+      const response = await request('/api/study', {
+        method: 'POST',
+        body: JSON.stringify({ groupId, question }),
+        skipLoader: true
+      });
       state.activeGroup = state.groups.find((group) => group.id === groupId) || state.activeGroup;
       state.chatHistory.push({ role: 'assistant', text: response.answer || 'StudyBot couldn’t produce a helpful answer right now. Try again with a clearer question or check your group resources.' });
     } catch (error) {
@@ -675,7 +682,7 @@ async function boot() {
 
             
 
-            await refreshDashboard();
+            await refreshDashboard({ skipLoader: true });
 
             
 
