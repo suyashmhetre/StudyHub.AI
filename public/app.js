@@ -286,7 +286,28 @@ function renderGroup() {
   const { group, resources, assignments, discussions } = data;
   const overview = `<section class="section-heading"><div><h2>Shared resources</h2><p>Notes and references everyone can use.</p></div>${button('Upload resource', 'open-upload', 'button-secondary')}</section><div class="resource-grid">${resources.length ? resources.slice(0, 3).map(resourceCard).join('') : '<div class="empty">No resources yet — upload the first one.</div>'}</div><section class="section-heading"><div><h2>Assignments</h2><p>Keep everyone aligned on upcoming work.</p></div>${button('Add assignment', 'open-assignment', 'button-secondary')}</section><div class="assignment-list">${assignments.length ? assignments.map(assignmentCard).join('') : '<div class="empty">No assignments have been added.</div>'}</div><section class="section-heading"><div><h2>Group discussions</h2><p>Ask a doubt, share insight, help each other.</p></div>${button('New discussion', 'open-discussion', 'button-secondary')}</section><div class="discussion-list">${discussions.length ? discussions.map(discussionCard).join('') : '<div class="empty">Start the conversation for this group.</div>'}</div>`;
   const tabs = { overview, resources: `<section class="section-heading"><div><h2>Resource library</h2><p>${resources.length} shared item${resources.length === 1 ? '' : 's'} in this group.</p></div>${button('Upload resource', 'open-upload', 'button-primary')}</section><div class="resource-grid">${resources.length ? resources.map(resourceCard).join('') : '<div class="empty">No resources yet.</div>'}</div>`, assignments: `<section class="section-heading"><div><h2>Assignments</h2><p>Plan work and share useful answers here.</p></div>${button('Add assignment', 'open-assignment', 'button-primary')}</section><div class="assignment-list">${assignments.length ? assignments.map(assignmentCard).join('') : '<div class="empty">No assignments yet.</div>'}</div>`, discussions: `<section class="section-heading"><div><h2>Discussions</h2><p>Explore questions with your classmates.</p></div>${button('New discussion', 'open-discussion', 'button-primary')}</section><div class="discussion-list">${discussions.length ? discussions.map(discussionCard).join('') : '<div class="empty">Start the first discussion.</div>'}</div>` };
-  const inviteControl = `<span class="chip invite-code"><span>Invite code <strong>${escapeHtml(group.inviteCode)}</strong></span><span><button class="copy-btn" type="button" data-action="copy-invite" data-invite="${escapeHtml(group.inviteCode)}" title="Copy invite code">⧉</button></span></span>`;
+  const inviteControl =
+group.privacy === "private"
+?
+`
+<span class="chip invite-code">
+    <span>
+        Invite code
+        <strong>${escapeHtml(group.inviteCode)}</strong>
+    </span>
+
+    <span>
+        <button
+            class="copy-btn"
+            data-action="copy-invite"
+            data-invite="${escapeHtml(group.inviteCode)}">
+            ⧉
+        </button>
+    </span>
+</span>
+`
+:
+"";
   const deleteControl = group.role === 'owner' ? `<button class="button button-danger" data-action="delete-group" data-group="${group.id}">Delete group</button>` : '';
   renderShell(`<div class="page"><section class="group-hero"><div class="eyebrow">${escapeHtml(group.subject)}</div><h1>${escapeHtml(group.name)}</h1><p>${escapeHtml(group.description || 'A focused space to learn together.')}</p><div class="hero-meta"><span class="chip">◌ ${group.memberCount} members</span><span class="chip">↥ ${group.resourceCount} resources</span>${inviteControl}</div><div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">${deleteControl}${button('Ask StudyBot ✦', 'nav-study', 'button-primary')}</div></section><nav class="tabs"><button class="tab ${state.groupTab === 'overview' ? 'active' : ''}" data-action="group-tab" data-tab="overview">Overview</button><button class="tab ${state.groupTab === 'resources' ? 'active' : ''}" data-action="group-tab" data-tab="resources">Resources</button><button class="tab ${state.groupTab === 'assignments' ? 'active' : ''}" data-action="group-tab" data-tab="assignments">Assignments</button><button class="tab ${state.groupTab === 'discussions' ? 'active' : ''}" data-action="group-tab" data-tab="discussions">Discussions</button></nav>${tabs[state.groupTab]}</div>`, group.name, button('Ask StudyBot ✦', 'nav-study', 'button-primary'));
 }
@@ -370,18 +391,84 @@ function openModal(kind) {
 function closeModal() { document.querySelector('.modal-backdrop')?.remove(); }
 
 async function populatePublicGroups(query) {
-  try {
-    const q = String(query || '').trim();
-    const data = await request(`/api/public-groups${q ? `?q=${encodeURIComponent(q)}` : ''}`);
-    const container = document.querySelector('#public-results');
-    if (!container) return;
-    if (!data.groups || !data.groups.length) { container.innerHTML = '<div class="empty">No public groups found.</div>'; return; }
-    container.innerHTML = data.groups.map((g) => {
-      return `<div class="resource-card" style="padding:12px;display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;margin-bottom:8px;row-gap:10px"><div class="group-cover ${escapeHtml(g.cover || 'violet')}" style="height:44px;width:44px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:12px;font-weight:700">${escapeHtml((g.subject || g.name).slice(0,2).toUpperCase())}</div><div style="min-width:0;overflow:hidden"><div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:2px">${escapeHtml(g.name)}</div><div style="color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(g.subject || '')} · ${g.memberCount || 0} members</div></div><div style="display:flex;gap:6px;flex-wrap:wrap;flex-shrink:0;justify-content:flex-end\"><button class="button" style="font-size:11px;min-height:34px;padding:6px 10px;white-space:nowrap" data-action="prefill-join" data-invite="${escapeHtml(g.inviteCode)}">Join</button><button class="button button-secondary" style="font-size:11px;min-height:34px;padding:6px 10px;white-space:nowrap" data-action="copy-invite" data-invite="${escapeHtml(g.inviteCode)}">Copy</button></div></div>`;
-    }).join('');
-  } catch (err) {
-    notify('Could not load public groups.', true);
-  }
+    try {
+
+        const q = String(query || "").trim();
+
+        const data = await request(
+            `/api/public-groups${q ? `?q=${encodeURIComponent(q)}` : ""}`
+        );
+
+        const container = document.querySelector("#public-results");
+
+        if (!container) return;
+
+        if (!data.groups || data.groups.length === 0) {
+            container.innerHTML =
+                '<div class="empty">No public groups found.</div>';
+            return;
+        }
+
+        container.innerHTML = data.groups.map(g => `
+            <div class="card" style="padding:16px;margin-bottom:12px">
+
+                <div style="display:flex;justify-content:space-between;align-items:flex-start">
+
+                    <div>
+
+                        <h3 style="margin:0">${escapeHtml(g.name)}</h3>
+
+                        <div style="color:var(--text-secondary);font-size:14px">
+                            ${escapeHtml(g.subject || "")}
+                        </div>
+
+                        <p style="margin-top:8px">
+                            ${escapeHtml(g.description || "No description")}
+                        </p>
+
+                        <small>${g.memberCount} members</small>
+
+                    </div>
+
+                    <div style="display:flex;gap:8px">
+
+                        ${
+                            g.privacy === "public"
+                                ? `
+                                <button
+                                    class="button"
+                                    data-action="join-public"
+                                    data-group="${g.id}">
+                                    Join
+                                </button>
+                                `
+                                : `
+                                <button
+                                    class="button"
+                                    data-action="prefill-join"
+                                    data-invite="${escapeHtml(g.inviteCode)}">
+                                    Join
+                                </button>
+
+                                <button
+                                    class="button button-secondary"
+                                    data-action="copy-invite"
+                                    data-invite="${escapeHtml(g.inviteCode)}">
+                                    Copy
+                                </button>
+                                `
+                        }
+
+                    </div>
+
+                </div>
+
+            </div>
+        `).join("");
+
+    } catch (err) {
+        notify("Could not load public groups.", true);
+    }
 }
 
 
@@ -435,6 +522,28 @@ document.addEventListener('click', async (event) => {
     const id = target.dataset.group || target.querySelector('input')?.value;
     return openGroup(id);
   }
+  if (action === "join-public") {
+
+    try {
+
+        await request(`/api/groups/${target.dataset.group}/join`, {
+            method: "POST"
+        });
+
+        closeModal();
+
+        await refreshDashboard();
+
+        notify("Joined successfully!");
+
+    } catch (err) {
+
+        notify(err.message, true);
+
+    }
+
+    return;
+}
   if (action === 'logout') { await request('/api/auth/logout', { method: 'POST' }); state.user = null; state.dashboard = null; state.groups = []; state.groupData = null; return renderAuth(); }
   if (action === 'open-create-group') return openModal('create-group');
   if (action === 'open-discover') { openModal('discover'); setTimeout(() => { populatePublicGroups(''); document.querySelector('#public-search')?.focus(); const btn = document.querySelector('#public-search-btn'); if (btn) btn.addEventListener('click', () => populatePublicGroups(document.querySelector('#public-search')?.value || '')); }, 40); return; }
@@ -588,13 +697,16 @@ async function boot() {
 
 const loader = document.getElementById("startup-loader");
 
-loader.style.transition = "opacity .45s ease";
+if (loader) {
 
-loader.style.opacity = "0";
+    loader.style.transition = "opacity .45s ease";
+    loader.style.opacity = "0";
 
-setTimeout(() => {
-    loader.remove();
-}, 450);
-    }
+    setTimeout(() => {
+        loader.remove();
+    }, 450);
+
+  }
+}
 }
 boot();

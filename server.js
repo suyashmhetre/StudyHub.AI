@@ -262,9 +262,24 @@ if (method === 'GET' && pathname === '/api/dashboard') {
     return sendJson(res, 201, { group: await store.createGroup({ name, subject, description, privacy: input.privacy === 'public' ? 'public' : 'private' }, user.id) });
   }
   if (method === 'POST' && pathname === '/api/groups/join') {
+
     const input = await readJson(req); const group = await store.joinGroup(clampText(input.inviteCode, 30).toUpperCase(), user.id); if (!group) return sendError(res, 404, 'No group matches that invite code.'); return sendJson(res, 200, { group });
   }
+const publicJoinMatch = pathname.match(/^\/api\/groups\/([^/]+)\/join$/);
 
+if (publicJoinMatch && method === "POST") {
+
+    const group = await store.joinPublicGroup(
+        publicJoinMatch[1],
+        user.id
+    );
+
+    if (!group) {
+        return sendError(res, 404, "Public group not found.");
+    }
+
+    return sendJson(res, 200, { group });
+}
   const groupMatch = pathname.match(/^\/api\/groups\/([^/]+)$/); const resourceMatch = pathname.match(/^\/api\/groups\/([^/]+)\/resources$/); const assignmentMatch = pathname.match(/^\/api\/groups\/([^/]+)\/assignments$/); const discussionMatch = pathname.match(/^\/api\/groups\/([^/]+)\/discussions$/); const replyMatch = pathname.match(/^\/api\/discussions\/([^/]+)\/replies$/); const downloadMatch = pathname.match(/^\/api\/resources\/([^/]+)\/download$/); const resourceDeleteMatch = pathname.match(/^\/api\/resources\/([^/]+)$/); const assignmentDeleteMatch = pathname.match(/^\/api\/assignments\/([^/]+)$/);
   if (downloadMatch && method === 'GET') return serveDownload(req, res, downloadMatch[1], user);
   if (groupMatch && method === 'DELETE') {
