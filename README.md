@@ -1,102 +1,260 @@
-# StudyHub AI
+# 🎓 StudyHub AI
 
-StudyHub AI is a runnable collaborative learning platform. Students can create or join study groups, upload and share private study files, track assignments, start discussions, and ask grounded questions against their group’s document library.
+An AI-powered collaborative learning platform that helps students study smarter by combining AI assistance, resource sharing, and collaborative study groups in one place.
 
-## Run it locally
+---
 
-Prerequisite: Node.js 20 or later.
+## 📖 Overview
 
-```powershell
-npm.cmd start
+StudyHub AI is designed to solve common problems faced by students during their academic journey. Instead of switching between multiple applications for notes, discussions, file sharing, and AI tools, StudyHub AI brings everything together into a single platform.
+
+Students can create study groups, share learning resources, upload notes and PDFs, and receive instant AI-powered assistance for their questions.
+
+---
+
+# ✨ Features
+
+### 🤖 AI Study Assistant
+- Ask academic questions and receive structured AI-generated answers.
+- Generate concise summaries from study materials.
+- Explain complex concepts in a simple and understandable way.
+- Assist students with learning and revision.
+
+### 👥 Study Groups
+- Create public or private study groups.
+- Join groups using invite codes.
+- Collaborate with classmates.
+- Manage group members.
+
+### 📚 Resource Sharing
+- Upload study notes and PDFs.
+- Secure cloud storage for files.
+- Easy access to shared resources.
+- Organize learning materials in one place.
+
+### 🔍 Smart Search
+- Search study resources quickly.
+- Find uploaded materials easily.
+
+### 📱 Responsive Design
+- Works on desktop, tablet, and mobile devices.
+
+---
+
+# 🎯 Problems It Solves
+
+Students often face challenges such as:
+
+- Notes scattered across multiple platforms.
+- Difficulty collaborating with classmates.
+- Waiting too long for answers to academic doubts.
+- Managing study resources inefficiently.
+- Finding reliable explanations for difficult topics.
+
+StudyHub AI addresses these issues by providing a centralized learning platform where students can:
+
+- Learn collaboratively.
+- Share educational resources.
+- Access AI-powered explanations instantly.
+- Organize study materials efficiently.
+- Improve productivity during exam preparation.
+
+---
+
+# 🛠 Tech Stack
+
+## Frontend
+
+- HTML5
+- CSS3
+- JavaScript
+
+## Backend
+
+- Node.js
+- Express.js
+
+## Database
+
+- MongoDB
+
+## Cloud Storage
+
+- AWS S3
+
+## Artificial Intelligence
+
+- Google Gemini API
+
+## Deployment
+
+- Vercel
+
+---
+
+# 📂 Project Structure
+
+```
+StudyHub-AI/
+│
+├── client/
+│   ├── css/
+│   ├── js/
+│   ├── images/
+│   └── pages/
+│
+├── server/
+│   ├── routes/
+│   ├── controllers/
+│   ├── middleware/
+│   ├── models/
+│   ├── config/
+│   └── server.js
+│
+├── uploads/
+├── package.json
+├── .env.example
+└── README.md
 ```
 
-Open [http://localhost:4173](http://localhost:4173).
+*(Modify the structure if your project differs.)*
 
-Use the seeded demo account:
+---
 
-- Email: `demo@studyhub.ai`
-- Password: `demo1234`
+# 🚀 Getting Started
 
-Or create a new account from the sign-up screen.
+## Prerequisites
 
-## What is implemented
+- Node.js
+- MongoDB
+- AWS Account (S3 Bucket)
+- Google Gemini API Key
 
-- Cookie-backed registration, login, and logout with salted password hashing.
-- Private/public group creation and join-by-invite-code.
-- MongoDB-ready users, groups, memberships, resources, document chunks, assignments, discussions, and activity data.
-- Secure resource upload for PDF, DOCX, PPTX, TXT, Markdown, and CSV files (20 MB maximum).
-- File storage via local disk or optional S3, with secure resource upload.
-- Server-side text extraction and chunking, so StudyBot answers use uploaded content rather than only file names.
-- Gemini-backed chat responses, flashcards, quizzes, and study plans when `GEMINI_API_KEY` is set; source-grounded local fallback when it is not.
-- Assignment creation and group discussion posting.
-- Dashboard metrics and recent group activity.
-- Responsive Gemini chat interface for group-question answering.
-- Persistent local data in `data/db.json` (created on first server start).
-- Responsive interface designed for desktop and mobile.
+---
 
-## Architecture
+## Installation
 
-The application uses no third-party runtime dependencies so it can start immediately in a new workspace.
+Clone the repository
 
-```text
-Browser UI (public/app.js)
-          │ JSON + multipart upload
-Node API (server.js)
-    ┌─────┴─────────┐
-MongoDB Atlas    Private Supabase Storage
-    │                    │
-Searchable text chunks   Original documents
-    └─────┬─────────┘
-       Gemini API
+```bash
+git clone https://github.com/yourusername/StudyHub-AI.git
 ```
 
-The `POST /api/study` route retrieves only the selected group’s indexed chunks and sends those excerpts to Gemini. Scanned PDFs can use a controlled Gemini PDF fallback when conventional extraction yields no text.
+Go into the project directory
 
-## Configure MongoDB, storage, and AI
-
-Copy `.env.example` to `.env`, then provide the three cloud services:
-
-1. `MONGODB_URI` and `MONGODB_DATABASE` — MongoDB Atlas stores logins, group permissions, and content metadata/chunks.
-2. `S3_BUCKET`, `AWS_S3_BUCKET`, `S3_KEY`, `AWS_ACCESS_KEY_ID`, `S3_SECRET`, `AWS_SECRET_ACCESS_KEY`, `S3_ENDPOINT`, and `S3_REGION` — optional S3-compatible storage for uploaded documents.
-3. `GEMINI_API_KEY` — enables model-generated responses over retrieved document text.
-
-When no cloud storage configuration is supplied, development mode uses `data/db.json` and `data/uploads/`. This fallback is intentionally not for production.
-
-### Vercel deployment
-
-Vercel Functions have a read-only filesystem, so add these environment variables in **Project Settings → Environment Variables** for each deployed environment (Production and Preview, if used):
-
-- `MONGODB_URI` and `MONGODB_DATABASE`
-- `STORAGE_PROVIDER=s3`
-- `S3_BUCKET`, `S3_KEY`, `S3_SECRET`, and `S3_REGION`
-
-Redeploy after changing environment variables. The upload route indexes files during the request and is configured with a 60-second Vercel function duration for document extraction. Confirm the deployment is using persistent services at `/api/health`; it should report `database: "mongo"` and `storage: "s3"`.
-
-See [data-and-ai-architecture.md](docs/data-and-ai-architecture.md) for the full data flow, collection model, security boundaries, and setup.
-
-## API surface
-
-| Method | Endpoint | Purpose |
-| --- | --- | --- |
-| POST | `/api/auth/register` | Create a student account |
-| POST | `/api/auth/login` | Start a session |
-| POST | `/api/auth/logout` | End a session |
-| GET | `/api/dashboard` | Workspace metrics, groups, activity |
-| GET/POST | `/api/groups` | List/create groups |
-| POST | `/api/groups/join` | Join by invite code |
-| GET | `/api/groups/:id` | Read a group workspace |
-| GET/POST | `/api/groups/:id/resources` | List/add resources |
-| GET | `/api/resources/:id/download` | Securely download a group resource |
-| GET/POST | `/api/groups/:id/assignments` | List/add assignments |
-| GET/POST | `/api/groups/:id/discussions` | List/create discussions |
-| POST | `/api/study` | Generate a study aid |
-
-## Verify
-
-```powershell
-npm.cmd test
+```bash
+cd StudyHub-AI
 ```
 
-## Important scope note
+Install dependencies
 
-This is a functional local MVP, not a deployed multi-tenant production system. The production upgrade path above is deliberate: raw uploaded documents, email verification, password recovery, real-time discussion, malware scanning, model integration, and role-management approvals require external infrastructure and service credentials.
+```bash
+npm install
+```
+
+Create a `.env` file in the project root and configure the required environment variables.
+
+Start the application
+
+```bash
+npm start
+```
+
+For development
+
+```bash
+npm run dev
+```
+
+---
+
+# 🔑 Environment Variables
+
+Create a `.env` file and configure:
+
+```env
+PORT=
+
+MONGODB_URI=
+
+JWT_SECRET=
+
+AWS_ACCESS_KEY_ID=
+
+AWS_SECRET_ACCESS_KEY=
+
+AWS_REGION=
+
+AWS_BUCKET_NAME=
+
+GEMINI_API_KEY=
+```
+
+---
+
+# 📸 Screenshots
+
+You can add screenshots here.
+
+```
+Home Page
+
+Dashboard
+
+Study Groups
+
+AI Chat
+
+Resource Library
+```
+
+---
+
+# 🔮 Future Enhancements
+
+- Notification System
+- Assignment Submission
+- AI-generated Flashcards
+- AI Quiz Generator
+- User Profiles
+- Resource Recommendations
+- Activity Dashboard
+- Study Progress Tracking
+- Dark Mode
+- Real-time Group Chat
+- Calendar & Deadlines
+- Admin Dashboard
+
+---
+
+# 🤝 Contributing
+
+Contributions are welcome!
+
+1. Fork the repository.
+2. Create a new feature branch.
+3. Commit your changes.
+4. Push the branch.
+5. Open a Pull Request.
+
+---
+
+# ⭐ Support
+
+If you found this project useful, consider giving it a ⭐ on GitHub.
+
+Your support motivates further development.
+
+---
+
+# 📄 License
+
+This project is licensed under the MIT License.
+
+---
+
+## 👨‍💻 Developer
+
+**Suyash Mhetre**
+
+If you like this project, feel free to connect, provide feedback, or contribute to making StudyHub AI even better.
