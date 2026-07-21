@@ -3,6 +3,9 @@ require('dotenv').config();
 // Read and normalize important environment variables
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY ? String(process.env.GEMINI_API_KEY).trim() : null;
 const GEMINI_MODEL = process.env.GEMINI_MODEL ? String(process.env.GEMINI_MODEL).trim() : 'gemini-flash-latest';
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID ? String(process.env.GOOGLE_CLIENT_ID).trim() : null;
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET ? String(process.env.GOOGLE_CLIENT_SECRET).trim() : null;
+const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI ? String(process.env.GOOGLE_REDIRECT_URI).trim() : null;
 
 
 const http = require('node:http');
@@ -93,6 +96,12 @@ function verifyPassword(password, stored) {
   return candidate.length === storedHash.length && crypto.timingSafeEqual(Buffer.from(candidate, 'hex'), Buffer.from(storedHash, 'hex'));
 }
 function getCookie(req, name) { const hit = String(req.headers.cookie || '').split(';').map((item) => item.trim()).find((item) => item.startsWith(`${name}=`)); return hit ? decodeURIComponent(hit.slice(name.length + 1)) : null; }
+function isSecureRequest(req) { return process.env.VERCEL === '1' || String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https'; }
+function cookieOptions(req, { maxAge = 604800, httpOnly = true } = {}) { return `Path=/; ${httpOnly ? 'HttpOnly; ' : ''}SameSite=Lax; ${isSecureRequest(req) ? 'Secure; ' : ''}Max-Age=${maxAge}`; }
+function sessionCookie(req, token) { return `studyhub_session=${encodeURIComponent(token)}; ${cookieOptions(req)}`; }
+function oauthRedirectUri(req) { if (GOOGLE_REDIRECT_URI) return GOOGLE_REDIRECT_URI; return `${isSecureRequest(req) ? 'https' : 'http'}://${req.headers.host}/api/auth/google/callback`; }
+function oauthState(value) { return crypto.createHmac('sha256', GOOGLE_CLIENT_SECRET || 'studyhub-google-oauth').update(value).digest('base64url'); }
+function redirect(res, location, headers = {}) { res.writeHead(302, { Location: location, ...headers }); res.end(); }
 async function sessionUser(req) {
 
     const token = getCookie(req, "studyhub_session");
@@ -225,17 +234,40 @@ async function handleApi(req, res, pathname) {
   const { method } = req;
   if (method === 'GET' && pathname === '/api/health') return sendJson(res, 200, { status: 'ok', database: store.kind, storage: fileStorage.kind, aiConfigured: Boolean(GEMINI_API_KEY) });
   if (method === 'GET' && pathname === '/api/session') return sendJson(res, 200, { user: safeUser(await sessionUser(req)) });
+  if (method === 'GET' && pathname === '/api/auth/google') {
+    if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) return sendError(res, 503, 'Google sign-in is not configured yet. Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.');
+    const state = crypto.randomBytes(32).toString('base64url');
+    const params = new URLSearchParams({ client_id: GOOGLE_CLIENT_ID, redirect_uri: oauthRedirectUri(req), response_type: 'code', scope: 'openid email profile', state, prompt: 'select_account' });
+    return redirect(res, `https://accounts.google.com/o/oauth2/v2/auth?${params}`, { 'Set-Cookie': `studyhub_google_state=${state}.${oauthState(state)}; ${cookieOptions(req, { maxAge: 600 })}` });
+  }
+  if (method === 'GET' && pathname === '/api/auth/google/callback') {
+    const url = new URL(req.url, `http://${req.headers.host}`); const error = url.searchParams.get('error'); const code = url.searchParams.get('code'); const state = url.searchParams.get('state');
+    const [storedValue, storedSignature] = String(getCookie(req, 'studyhub_google_state') || '').split('.');
+    const safeEqual = (left, right) => left && right && left.length === right.length && crypto.timingSafeEqual(Buffer.from(left), Buffer.from(right));
+    const validState = safeEqual(oauthState(storedValue), storedSignature) && safeEqual(state, storedValue);
+    const clearState = `studyhub_google_state=; ${cookieOptions(req, { maxAge: 0 })}`;
+    if (error || !code || !validState) return redirect(res, '/?auth_error=google', { 'Set-Cookie': clearState });
+    try {
+      const tokenResponse = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ code, client_id: GOOGLE_CLIENT_ID, client_secret: GOOGLE_CLIENT_SECRET, redirect_uri: oauthRedirectUri(req), grant_type: 'authorization_code' }) });
+      const tokens = await tokenResponse.json(); if (!tokenResponse.ok || !tokens.access_token) throw new Error('Google did not return an access token.');
+      const profileResponse = await fetch('https://openidconnect.googleapis.com/v1/userinfo', { headers: { Authorization: `Bearer ${tokens.access_token}` } }); const profile = await profileResponse.json(); const email = String(profile.email || '').trim().toLowerCase();
+      if (!profileResponse.ok || !profile.email_verified || !/^\S+@\S+\.\S+$/.test(email)) throw new Error('Google did not provide a verified email address.');
+      let user = await store.findUserByEmail(email);
+      if (!user) { const name = clampText(profile.name, 80) || email.split('@')[0]; user = await store.createUser({ name, email, passwordHash: null, avatar: name.split(/\s+/).map((part) => part[0]).slice(0, 2).join('').toUpperCase(), authProvider: 'google', googleId: clampText(profile.sub, 120) || null }); }
+      const token = await store.createSession(user.id); return redirect(res, '/', { 'Set-Cookie': [clearState, sessionCookie(req, token)] });
+    } catch (error) { console.error('Google OAuth callback failed:', error.message); return redirect(res, '/?auth_error=google', { 'Set-Cookie': clearState }); }
+  }
   if (method === 'POST' && pathname === '/api/auth/register') {
     const input = await readJson(req); const name = clampText(input.name, 80); const email = clampText(input.email, 120).toLowerCase(); const password = String(input.password || '');
     if (name.length < 2 || !/^\S+@\S+\.\S+$/.test(email) || password.length < 8) return sendError(res, 400, 'Enter a name, valid email, and password of at least 8 characters.');
     if (await store.findUserByEmail(email)) return sendError(res, 409, 'An account already uses this email.');
     const user = await store.createUser({ name, email, passwordHash: passwordHash(password), avatar: name.split(/\s+/).map((part) => part[0]).slice(0, 2).join('').toUpperCase() });
-    const token = await store.createSession(user.id); return sendJson(res, 201, { user: safeUser(user) }, { 'Set-Cookie': `studyhub_session=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800` });
+    const token = await store.createSession(user.id); return sendJson(res, 201, { user: safeUser(user) }, { 'Set-Cookie': sessionCookie(req, token) });
   }
   if (method === 'POST' && pathname === '/api/auth/login') {
     const input = await readJson(req); const user = await store.findUserByEmail(String(input.email || '').trim().toLowerCase());
     if (!user || !verifyPassword(String(input.password || ''), user.passwordHash)) return sendError(res, 401, 'Incorrect email or password.');
-    const token = await store.createSession(user.id); return sendJson(res, 200, { user: safeUser(user) }, { 'Set-Cookie': `studyhub_session=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800` });
+    const token = await store.createSession(user.id); return sendJson(res, 200, { user: safeUser(user) }, { 'Set-Cookie': sessionCookie(req, token) });
   }
   if (method === "POST" && pathname === "/api/auth/logout") {
     const token = getCookie(req, "studyhub_session");
@@ -250,7 +282,7 @@ async function handleApi(req, res, pathname) {
         { ok: true },
         {
             "Set-Cookie":
-                "studyhub_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
+                `studyhub_session=; ${cookieOptions(req, { maxAge: 0 })}`
         }
     );
 }

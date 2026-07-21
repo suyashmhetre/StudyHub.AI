@@ -189,6 +189,8 @@ function renderAuth(mode = 'login') {
             <label>Password<input required type="password" minlength="8" name="password" placeholder="At least 8 characters" /></label>
             <button class="button button-primary wide" type="submit">${isRegister ? 'Create account →' : 'Sign in →'}</button>
           </form>
+          <div class="auth-divider"><span>or</span></div>
+          <a class="google-sign-in" href="/api/auth/google"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M21.35 12.23c0-.72-.06-1.24-.2-1.78H12v3.37h5.37c-.11.84-.71 2.1-2.04 2.95l-.02.11 2.96 2.29.2.02c1.84-1.69 2.88-4.18 2.88-6.96Z"/><path fill="#34A853" d="M12 21.75c2.63 0 4.84-.87 6.45-2.36l-3.07-2.42c-.82.57-1.92.97-3.38.97-2.57 0-4.75-1.69-5.53-4.03l-.1.01-3.08 2.38-.03.1A9.75 9.75 0 0 0 12 21.75Z"/><path fill="#FBBC05" d="M6.47 13.91A5.87 5.87 0 0 1 6.16 12c0-.66.12-1.3.3-1.91l-.01-.13-3.12-2.41-.1.05A9.75 9.75 0 0 0 2.25 12c0 1.58.38 3.08.98 4.4l3.24-2.49Z"/><path fill="#EA4335" d="M12 6.06c1.84 0 3.08.8 3.79 1.46l2.76-2.69C16.83 3.24 14.63 2.25 12 2.25a9.75 9.75 0 0 0-8.77 5.35l3.23 2.49C7.25 7.75 9.43 6.06 12 6.06Z"/></svg>Continue with Google</a>
           <p class="auth-switch">${isRegister ? 'Already have an account?' : 'New to StudyHub?'} <button class="text-link" data-action="auth-${isRegister ? 'login' : 'register'}">${isRegister ? 'Sign in' : 'Create an account'}</button></p>
          
         </div>

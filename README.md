@@ -188,7 +188,19 @@ AWS_REGION=
 AWS_BUCKET_NAME=
 
 GEMINI_API_KEY=
+
+# Google OAuth (Web application client)
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+# Register this exact URL in Google Cloud Console for local development:
+# http://localhost:4173/api/auth/google/callback
+# In production, set the deployed callback URL explicitly:
+# GOOGLE_REDIRECT_URI=https://your-domain.com/api/auth/google/callback
 ```
+
+## Google sign-in setup
+
+Create an OAuth 2.0 **Web application** client in Google Cloud Console and add the callback URL shown above to its authorized redirect URIs. Add the client ID and client secret to the deployment environment as well as your local `.env`. The client secret must remain server-side; the browser only navigates to the app's `/api/auth/google` endpoint.
 
 ---
 
