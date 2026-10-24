@@ -118,7 +118,10 @@ async function request(url, options = {}) {
         const data = await response.json().catch(() => ({}));
 
         if (!response.ok) {
-            throw new Error(data.error || "Something went wrong.");
+            const message = response.status === 413
+              ? 'This upload exceeded the server limit. Configure S3 direct uploads, then retry.'
+              : data.error || "Something went wrong.";
+            throw new Error(message);
         }
 
         return data;
@@ -382,7 +385,7 @@ function openModal(kind) {
     'join-group': `<div class="modal"><div class="modal-head"><div><h2>Join a study group</h2><p>Ask the group owner for their invite code.</p></div><button class="close" data-action="close-modal">×</button></div><form class="form-stack" data-form="join-group"><label>Invite code<input name="inviteCode" required placeholder="e.g. OS4-LEARN" style="text-transform:uppercase" /></label><div class="modal-actions"><button type="button" class="button button-ghost" data-action="close-modal">Cancel</button><button type="submit" class="button button-primary">Join group</button></div></form></div>`,
     'discover': `<div class="modal"><div class="modal-head"><div><h2>Discover public groups</h2><p>Find and join public study groups. Click "Join" to pre-fill the join form.</p></div><button class="close" data-action="close-modal">×</button></div><div style="display:grid;gap:10px;margin-top:12px;grid-template-columns:1fr auto"><input id="public-search" placeholder="Search public groups by name or subject" style="padding:10px;border-radius:10px;border:1px solid #e9e6f6;min-width:0;font-size:14px" /><button class="button button-primary" id="public-search-btn" style="white-space:nowrap">Search</button></div><div id="public-results" style="margin-top:14px;max-height:45vh;overflow-y:auto"></div></div>`,
 
-    upload: `<div class="modal"><div class="modal-head"><div><h2>Share a readable resource</h2><p>The file is stored privately and indexed so your group can study from it.</p></div><button class="close" data-action="close-modal">×</button></div><form class="form-stack" data-form="upload"><label>Study group<select name="groupId" required>${groupOptions}</select></label><label>Resource title<input name="title" required minlength="3" placeholder="e.g. Unit 5 revision notes" /></label><div class="form-row"><label>Unit<input name="unit" placeholder="e.g. Unit 5" /></label><label>Tags<input name="tags" placeholder="networks, exam" /></label></div><label>Description<textarea name="description" placeholder="What is inside this resource?"></textarea></label><label class="file-drop">↥ <span id="file-label">Choose PDF, DOCX, PPTX, TXT, MD or CSV</span><input id="resource-file" name="file" required type="file" accept=".pdf,.docx,.pptx,.txt,.md,.markdown,.csv" /></label><div class="modal-actions"><button type="button" class="button button-ghost" data-action="close-modal">Cancel</button><button type="submit" class="button button-primary">Upload</button></div></form></div>`,
+    upload: `<div class="modal"><div class="modal-head"><div><h2>Share a readable resource</h2><p>The file is stored privately and indexed so your group can study from it.</p></div><button class="close" data-action="close-modal">×</button></div><form class="form-stack" data-form="upload"><label>Study group<select name="groupId" required>${groupOptions}</select></label><label>Resource title *<input name="title" type="text" required minlength="3" maxlength="120" placeholder="e.g. Unit 5 revision notes" /><small class="file-help">Required. Enter 3–120 characters. Unit, tags, and description are optional.</small></label><div class="form-row"><label>Unit<input name="unit" placeholder="e.g. Unit 5" /></label><label>Tags<input name="tags" placeholder="networks, exam" /></label></div><label>Description<textarea name="description" placeholder="What is inside this resource?"></textarea></label><label class="file-drop">↥ <span id="file-label">Choose PDF, DOCX, PPTX, TXT, MD or CSV</span><input id="resource-file" name="file" required type="file" accept=".pdf,.docx,.pptx,.txt,.md,.markdown,.csv,application/pdf,text/plain,text/csv" /><small class="file-help">Maximum 20 MB. Phone photos and HEIC files are not supported.</small></label><div class="modal-actions"><button type="button" class="button button-ghost" data-action="close-modal">Cancel</button><button type="submit" class="button button-primary">Upload</button></div></form></div>`,
     assignment: `<div class="modal"><div class="modal-head"><div><h2>Add an assignment</h2><p>Keep your group aligned on what needs to be completed.</p></div><button class="close" data-action="close-modal">×</button></div><form class="form-stack" data-form="assignment"><label>Study group<select name="groupId" required>${groupOptions}</select></label><label>Assignment title<input name="title" required minlength="3" placeholder="e.g. SQL Normalization worksheet" /></label><label>Instructions<textarea name="description" placeholder="Add a short description or requirements."></textarea></label><div class="modal-actions"><button type="button" class="button button-ghost" data-action="close-modal">Cancel</button><button type="submit" class="button button-primary">Add assignment</button></div></form></div>`,
     discussion: `<div class="modal"><div class="modal-head"><div><h2>Start a discussion</h2><p>Ask a thoughtful question or share a useful insight.</p></div><button class="close" data-action="close-modal">×</button></div><form class="form-stack" data-form="discussion"><label>Study group<select name="groupId" required>${groupOptions}</select></label><label>Title<input name="title" required minlength="3" placeholder="What do you want to discuss?" /></label><label>Your message<textarea name="body" required minlength="5" placeholder="Give your group enough context to help."></textarea></label><div class="modal-actions"><button type="button" class="button button-ghost" data-action="close-modal">Cancel</button><button type="submit" class="button button-primary">Post discussion</button></div></form></div>`
   };
@@ -496,6 +499,59 @@ async function navigate(page) {
   if (page === 'dashboard') render();
 }
 
+async function uploadResource(form, values) {
+  const file = form.querySelector('#resource-file').files[0];
+  if (!file) throw new Error('Choose a file to share.');
+  if (file.size > 20 * 1024 * 1024) throw new Error('This file is larger than 20 MB. Choose a smaller file.');
+
+  const formData = new FormData(form);
+  formData.set('file', file);
+  const fields = Object.fromEntries(formData.entries());
+  delete fields.file;
+
+  const upload = await request(`/api/groups/${values.groupId}/resources/upload-url`, {
+    method: 'POST',
+    body: JSON.stringify({ fileName: file.name, fileSize: file.size, title: values.title })
+  });
+  if (!upload.directUpload) {
+    if (upload.requiresDirectUpload) throw new Error('File uploads on this deployment need S3 storage configured. Add AWS_BUCKET_NAME and the AWS credentials in Vercel, then retry.');
+    return request(`/api/groups/${values.groupId}/resources`, { method: 'POST', body: formData });
+  }
+
+  let response;
+  showLoader('Uploading file...');
+  try {
+    response = await fetch(upload.url, {
+      method: 'PUT',
+      headers: { 'Content-Type': upload.mimeType },
+      body: file
+    });
+  } catch (error) {
+    if (error instanceof TypeError) throw new Error('Could not reach file storage. Check your connection and the S3 bucket CORS settings, then retry.');
+    throw error;
+  } finally {
+    hideLoader();
+  }
+  if (!response.ok) {
+    throw new Error(response.status === 403
+      ? 'Storage rejected the upload. Check the S3 bucket CORS settings and retry.'
+      : `File upload failed (${response.status}). Check your connection and retry.`);
+  }
+
+  return request(`/api/groups/${values.groupId}/resources/complete`, {
+    method: 'POST',
+    body: JSON.stringify({
+      ...fields,
+      storagePath: upload.storagePath,
+      fileName: upload.fileName,
+      fileSize: upload.fileSize,
+      mimeType: upload.mimeType,
+      expiresAt: upload.expiresAt,
+      signature: upload.signature
+    })
+  });
+}
+
 async function submitForm(form) {
   const type = form.dataset.form;
   const values = Object.fromEntries(new FormData(form).entries());
@@ -505,7 +561,7 @@ async function submitForm(form) {
     }
     if (type === 'create-group') { const data = await request('/api/groups', { method: 'POST', body: JSON.stringify(values) }); closeModal(); await refreshDashboard(); notify(`“${data.group.name}” is ready.`); await openGroup(data.group.id); return; }
     if (type === 'join-group') { const data = await request('/api/groups/join', { method: 'POST', body: JSON.stringify(values) }); closeModal(); await refreshDashboard(); notify(`You joined “${data.group.name}”.`); await openGroup(data.group.id); return; }
-    if (type === 'upload') { const file = form.querySelector('#resource-file').files[0]; if (!file) throw new Error('Choose a file to share.'); const upload = new FormData(form); upload.set('file', file); const data = await request(`/api/groups/${values.groupId}/resources`, { method: 'POST', body: upload }); closeModal(); const status = data.resource.indexStatus === 'indexed' ? `indexed into ${data.indexedChunks} study sections` : 'saved, but could not be fully read'; notify(`“${data.resource.title}” is ${status}.`); await refreshDashboard(); if (state.page === 'group' && state.activeGroup.id === values.groupId) await openGroup(values.groupId); else render(); return; }
+    if (type === 'upload') { const data = await uploadResource(form, values); closeModal(); const status = data.resource.indexStatus === 'indexed' ? `indexed into ${data.indexedChunks} study sections` : 'saved, but could not be fully read'; notify(`“${data.resource.title}” is ${status}.`); await refreshDashboard(); if (state.page === 'group' && state.activeGroup.id === values.groupId) await openGroup(values.groupId); else render(); return; }
     if (type === 'assignment') { const data = await request(`/api/groups/${values.groupId}/assignments`, { method: 'POST', body: JSON.stringify(values) }); closeModal(); notify(`Assignment “${data.assignment.title}” was added.`); await refreshDashboard(); if (state.page === 'group' && state.activeGroup.id === values.groupId) await openGroup(values.groupId); else render(); return; }
     if (type === 'discussion') { const data = await request(`/api/groups/${values.groupId}/discussions`, { method: 'POST', body: JSON.stringify(values) }); closeModal(); notify(`Discussion “${data.discussion.title}” was posted.`); await refreshDashboard(); if (state.page === 'group' && state.activeGroup.id === values.groupId) await openGroup(values.groupId); else render(); }
     if (type === 'reply') { const discussionId = form.dataset.discussion; const groupId = form.dataset.group; const data = await request(`/api/discussions/${discussionId}/replies`, { method: 'POST', body: JSON.stringify({ body: values.body }) }); form.reset(); notify(`Reply posted to “${data.discussion.title}”.`); await refreshDashboard(); if (state.page === 'group' && state.activeGroup?.id === groupId) await openGroup(groupId); else render(); }

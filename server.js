@@ -59,7 +59,7 @@ async function initialize() {
         fileStorage = await createFileStorage({
           storageProvider: process.env.STORAGE_PROVIDER,
           localRoot: path.join(DATA_DIR, "uploads"),
-          s3Bucket: process.env.S3_BUCKET || process.env.AWS_S3_BUCKET,
+          s3Bucket: process.env.S3_BUCKET || process.env.AWS_S3_BUCKET || process.env.AWS_BUCKET_NAME,
           s3Key: process.env.S3_KEY || process.env.AWS_ACCESS_KEY_ID,
           s3Secret: process.env.S3_SECRET || process.env.AWS_SECRET_ACCESS_KEY,
           s3Endpoint: process.env.S3_ENDPOINT,
@@ -141,7 +141,11 @@ function readMultipart(req) {
       stream.on('end', () => { file = { name: info.filename, mimeType: info.mimeType || 'application/octet-stream', buffer: Buffer.concat(buffers) }; });
     });
     parser.on('error', reject);
-    parser.on('close', () => { if (tooLarge) return reject(new Error('Files must be 20 MB or smaller.')); if (!file?.name || !file.buffer.length) return reject(new Error('Choose a non-empty supported study file.')); resolve({ fields, file }); });
+    parser.on('close', () => {
+      if (tooLarge) return reject(Object.assign(new Error('Files must be 20 MB or smaller.'), { statusCode: 413 }));
+      if (!file?.name || !file.buffer.length) return reject(Object.assign(new Error('Choose a non-empty supported study file.'), { statusCode: 400 }));
+      resolve({ fields, file });
+    });
     req.pipe(parser);
   });
 }
@@ -149,8 +153,29 @@ function readMultipart(req) {
 function fileDetails(file) {
   const extension = String(file.name).split('.').pop().toLowerCase();
   const canonicalMimeType = SUPPORTED_EXTENSIONS.get(extension);
-  if (!canonicalMimeType) throw new Error('Supported formats: PDF, DOCX, PPTX, TXT, Markdown, and CSV.');
+  if (!canonicalMimeType) throw Object.assign(new Error('Supported formats: PDF, DOCX, PPTX, TXT, Markdown, and CSV.'), { statusCode: 400 });
   return { extension, canonicalMimeType, displayType: extension.toUpperCase() };
+}
+
+function uploadSignature(req, details) {
+  const token = getCookie(req, 'studyhub_session');
+  if (!token) return null;
+  return crypto.createHmac('sha256', token).update([
+    details.groupId,
+    details.storagePath,
+    details.fileName,
+    details.fileSize,
+    details.mimeType,
+    details.expiresAt
+  ].join('\n')).digest('base64url');
+}
+
+function matchesUploadSignature(req, details, signature) {
+  const expected = uploadSignature(req, details);
+  if (!expected || typeof signature !== 'string') return false;
+  const supplied = Buffer.from(signature);
+  const actual = Buffer.from(expected);
+  return supplied.length === actual.length && crypto.timingSafeEqual(supplied, actual);
 }
 
 async function groupAccess(req, res, groupId, user) {
@@ -198,20 +223,88 @@ async function indexPendingResources() {
   return pendingIndexingPromise;
 }
 
-async function addUploadedResource(req, res, groupId, user) {
-  const access = await groupAccess(req, res, groupId, user); if (!access) return;
-  const { fields, file } = await readMultipart(req);
-  const { canonicalMimeType, displayType } = fileDetails(file);
+async function saveUploadedResource(res, { groupId, user, access, fields, file, storagePath }) {
   const title = clampText(fields.title, 120);
   if (title.length < 3) return sendError(res, 400, 'A resource title of at least 3 characters is required.');
-  const storage = await fileStorage.upload({ groupId, fileName: file.name, buffer: file.buffer, mimeType: canonicalMimeType });
   const resource = {
-    id: id('res'), groupId, title, fileName: file.name, type: displayType, mimeType: canonicalMimeType, storagePath: storage.storagePath,
+    id: id('res'), groupId, title, fileName: file.name, type: file.displayType, mimeType: file.mimeType, storagePath,
     subject: clampText(fields.subject, 80) || access.group.subject, unit: clampText(fields.unit, 40) || 'General', tags: String(fields.tags || '').split(',').map((tag) => clampText(tag, 24)).filter(Boolean).slice(0, 8), description: clampText(fields.description, 400), size: file.buffer.length, uploaderId: user.id, downloads: 0, indexStatus: 'indexing', indexError: null, textLength: 0, createdAt: now()
   };
   await store.addResource(resource, []);
   const result = await indexResource(resource, file.buffer);
   return sendJson(res, 201, result);
+}
+
+async function addUploadedResource(req, res, groupId, user) {
+  const access = await groupAccess(req, res, groupId, user); if (!access) return;
+  const { fields, file: uploadedFile } = await readMultipart(req);
+  const { canonicalMimeType, displayType } = fileDetails(uploadedFile);
+  const title = clampText(fields.title, 120);
+  if (title.length < 3) return sendError(res, 400, 'A resource title of at least 3 characters is required.');
+  const storage = await fileStorage.upload({ groupId, fileName: uploadedFile.name, buffer: uploadedFile.buffer, mimeType: canonicalMimeType });
+  const file = { name: uploadedFile.name, displayType, mimeType: canonicalMimeType, buffer: uploadedFile.buffer };
+  return saveUploadedResource(res, { groupId, user, access, fields, file, storagePath: storage.storagePath });
+}
+
+async function createResourceUploadUrl(req, res, groupId, user) {
+  const access = await groupAccess(req, res, groupId, user); if (!access) return;
+  if (typeof fileStorage.createUploadUrl !== 'function') {
+    return sendJson(res, 200, { directUpload: false, requiresDirectUpload: process.env.VERCEL === '1' });
+  }
+
+  const input = await readJson(req);
+  if (clampText(input.title, 120).length < 3) return sendError(res, 400, 'A resource title of at least 3 characters is required.');
+  const fileName = clampText(String(input.fileName || '').split(/[\\/]/).pop(), 200);
+  const fileSize = Number(input.fileSize);
+  if (!fileName || !Number.isSafeInteger(fileSize) || fileSize < 1 || fileSize > MAX_FILE_BYTES) {
+    return sendError(res, 400, 'Choose a non-empty file that is 20 MB or smaller.');
+  }
+  const { canonicalMimeType } = fileDetails({ name: fileName });
+  const upload = await fileStorage.createUploadUrl({ groupId, fileName, mimeType: canonicalMimeType, fileSize });
+  const expiresAt = Date.now() + 600_000;
+  const details = { groupId, storagePath: upload.storagePath, fileName, fileSize, mimeType: canonicalMimeType, expiresAt };
+  return sendJson(res, 200, { directUpload: true, ...details, url: upload.url, signature: uploadSignature(req, details) });
+}
+
+async function completeDirectResourceUpload(req, res, groupId, user) {
+  const access = await groupAccess(req, res, groupId, user); if (!access) return;
+  if (typeof fileStorage.createUploadUrl !== 'function') return sendError(res, 400, 'Direct uploads are not enabled for this storage provider.');
+
+  const input = await readJson(req);
+  const fileName = clampText(String(input.fileName || '').split(/[\\/]/).pop(), 200);
+  const fileSize = Number(input.fileSize);
+  const expiresAt = Number(input.expiresAt);
+  const storagePath = String(input.storagePath || '');
+  const mimeType = String(input.mimeType || '');
+  const details = { groupId, storagePath, fileName, fileSize, mimeType, expiresAt };
+  const expectedMimeType = SUPPORTED_EXTENSIONS.get(fileName.split('.').pop().toLowerCase());
+  if (clampText(input.title, 120).length < 3) return sendError(res, 400, 'A resource title of at least 3 characters is required.');
+  if (!fileName || !Number.isSafeInteger(fileSize) || fileSize < 1 || fileSize > MAX_FILE_BYTES ||
+      expiresAt < Date.now() || expiresAt > Date.now() + 600_000 || mimeType !== expectedMimeType ||
+      !storagePath.startsWith(`${safeStorageSegment(groupId)}/`) || storagePath.split('/').length !== 2 ||
+      !matchesUploadSignature(req, details, input.signature)) {
+    return sendError(res, 400, 'This upload link has expired or is invalid. Please choose the file again.');
+  }
+
+  const buffer = await fileStorage.download(storagePath);
+  if (buffer.length !== fileSize) {
+    await fileStorage.remove(storagePath);
+    return sendError(res, 400, 'The uploaded file size did not match. Please try again.');
+  }
+  const displayType = fileName.split('.').pop().toUpperCase();
+  const file = { name: fileName, displayType, mimeType, buffer };
+  const fields = {
+    title: input.title,
+    subject: input.subject,
+    unit: input.unit,
+    tags: input.tags,
+    description: input.description
+  };
+  return saveUploadedResource(res, { groupId, user, access, fields, file, storagePath });
+}
+
+function safeStorageSegment(value) {
+  return String(value).replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 150);
 }
 
 async function serveDownload(req, res, resourceId, user) {
@@ -351,7 +444,12 @@ if (publicJoinMatch && method === "POST") {
 
     return sendJson(res, 200, { group });
 }
-  const groupMatch = pathname.match(/^\/api\/groups\/([^/]+)$/); const resourceMatch = pathname.match(/^\/api\/groups\/([^/]+)\/resources$/); const assignmentMatch = pathname.match(/^\/api\/groups\/([^/]+)\/assignments$/); const discussionMatch = pathname.match(/^\/api\/groups\/([^/]+)\/discussions$/); const replyMatch = pathname.match(/^\/api\/discussions\/([^/]+)\/replies$/); const downloadMatch = pathname.match(/^\/api\/resources\/([^/]+)\/download$/); const resourceDeleteMatch = pathname.match(/^\/api\/resources\/([^/]+)$/); const assignmentDeleteMatch = pathname.match(/^\/api\/assignments\/([^/]+)$/);
+  const groupMatch = pathname.match(/^\/api\/groups\/([^/]+)$/); const resourceUploadMatch = pathname.match(/^\/api\/groups\/([^/]+)\/resources\/(upload-url|complete)$/); const resourceMatch = pathname.match(/^\/api\/groups\/([^/]+)\/resources$/); const assignmentMatch = pathname.match(/^\/api\/groups\/([^/]+)\/assignments$/); const discussionMatch = pathname.match(/^\/api\/groups\/([^/]+)\/discussions$/); const replyMatch = pathname.match(/^\/api\/discussions\/([^/]+)\/replies$/); const downloadMatch = pathname.match(/^\/api\/resources\/([^/]+)\/download$/); const resourceDeleteMatch = pathname.match(/^\/api\/resources\/([^/]+)$/); const assignmentDeleteMatch = pathname.match(/^\/api\/assignments\/([^/]+)$/);
+  if (resourceUploadMatch && method === 'POST') {
+    return resourceUploadMatch[2] === 'upload-url'
+      ? createResourceUploadUrl(req, res, resourceUploadMatch[1], user)
+      : completeDirectResourceUpload(req, res, resourceUploadMatch[1], user);
+  }
   if (downloadMatch && method === 'GET') return serveDownload(req, res, downloadMatch[1], user);
   if (groupMatch && method === 'DELETE') {
     const access = await groupAccess(req, res, groupMatch[1], user); if (!access) return;
@@ -441,7 +539,7 @@ function serveStatic(req, res, pathname) {
 function createServer() {
   return http.createServer(async (req, res) => {
     try { const pathname = new URL(req.url, `http://${req.headers.host}`).pathname; if (pathname.startsWith('/api/')) return await handleApi(req, res, pathname); return serveStatic(req, res, pathname); }
-    catch (error) { console.error(error); return sendError(res, error.message === 'Invalid JSON body.' ? 400 : 500, error.message || 'Unexpected server error.'); }
+    catch (error) { console.error(error); return sendError(res, error.statusCode || (error.message === 'Invalid JSON body.' ? 400 : 500), error.message || 'Unexpected server error.'); }
   });
 }
 
@@ -450,7 +548,7 @@ function createServer() {
   //fileStorage = await createFileStorage({
    // storageProvider: process.env.STORAGE_PROVIDER,
    // localRoot: path.join(DATA_DIR, 'uploads'),
-   // s3Bucket: process.env.S3_BUCKET || process.env.AWS_S3_BUCKET,
+   // s3Bucket: process.env.S3_BUCKET || process.env.AWS_S3_BUCKET || process.env.AWS_BUCKET_NAME,
    // s3Key: process.env.S3_KEY || process.env.AWS_ACCESS_KEY_ID,
    // s3Secret: process.env.S3_SECRET || process.env.AWS_SECRET_ACCESS_KEY,
     //s3Endpoint: process.env.S3_ENDPOINT,

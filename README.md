@@ -198,6 +198,21 @@ GOOGLE_CLIENT_SECRET=
 # GOOGLE_REDIRECT_URI=https://your-domain.com/api/auth/google/callback
 ```
 
+When deploying on Vercel, configure S3 storage so file bytes bypass the function's request-size limit. The app accepts `AWS_BUCKET_NAME` (as shown above), or `S3_BUCKET` / `AWS_S3_BUCKET`, and sends files directly to S3 using short-lived signed upload URLs. Set the bucket's CORS configuration to allow `PUT` from your deployed app origin. For example, replace `https://your-domain.com` with the exact site origin:
+
+```json
+[
+  {
+    "AllowedOrigins": ["https://your-domain.com"],
+    "AllowedMethods": ["PUT"],
+    "AllowedHeaders": ["*"],
+    "MaxAgeSeconds": 3000
+  }
+]
+```
+
+The existing local-storage mode remains available for local development. Supported resources are PDF, DOCX, PPTX, TXT, Markdown, and CSV, up to 20 MB each.
+
 ## Google sign-in setup
 
 Create an OAuth 2.0 **Web application** client in Google Cloud Console and add the callback URL shown above to its authorized redirect URIs. Add the client ID and client secret to the deployment environment as well as your local `.env`. The client secret must remain server-side; the browser only navigates to the app's `/api/auth/google` endpoint.

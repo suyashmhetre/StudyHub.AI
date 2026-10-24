@@ -31,7 +31,7 @@ async function processResource(store, fileStorage, resource) {
 
 async function run() {
   const store = await createStore({ mongoUri: process.env.MONGODB_URI, databaseName: process.env.MONGODB_DATABASE, dataFile: path.join(DATA_DIR, 'db.json') });
-  const fileStorage = await createFileStorage({ storageProvider: process.env.STORAGE_PROVIDER, localRoot: path.join(DATA_DIR, 'uploads'), s3Bucket: process.env.S3_BUCKET || process.env.AWS_S3_BUCKET, s3Key: process.env.S3_KEY || process.env.AWS_ACCESS_KEY_ID, s3Secret: process.env.S3_SECRET || process.env.AWS_SECRET_ACCESS_KEY, s3Endpoint: process.env.S3_ENDPOINT, s3Region: process.env.S3_REGION || process.env.AWS_REGION });
+  const fileStorage = await createFileStorage({ storageProvider: process.env.STORAGE_PROVIDER, localRoot: path.join(DATA_DIR, 'uploads'), s3Bucket: process.env.S3_BUCKET || process.env.AWS_S3_BUCKET || process.env.AWS_BUCKET_NAME, s3Key: process.env.S3_KEY || process.env.AWS_ACCESS_KEY_ID, s3Secret: process.env.S3_SECRET || process.env.AWS_SECRET_ACCESS_KEY, s3Endpoint: process.env.S3_ENDPOINT, s3Region: process.env.S3_REGION || process.env.AWS_REGION });
   console.log('Worker started — watching for resources to index.');
   while (true) {
     try {
