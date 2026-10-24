@@ -527,7 +527,7 @@ async function uploadResource(form, values) {
       body: file
     });
   } catch (error) {
-    if (error instanceof TypeError) throw new Error('Could not reach file storage. Check your connection and the S3 bucket CORS settings, then retry.');
+    if (error instanceof TypeError) throw new Error(`S3 upload was blocked from ${window.location.origin}. Allow this exact origin for PUT in the bucket CORS settings. If CORS already matches, verify AWS_REGION matches the bucket region.`);
     throw error;
   } finally {
     hideLoader();
