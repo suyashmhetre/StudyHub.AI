@@ -6,6 +6,7 @@ const { extractText, chunkText } = require('../lib/document');
 
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const POLL_INTERVAL_MS = Number(process.env.WORKER_POLL_MS || 5000);
+const STUDYBOT_MAINTENANCE = String(process.env.STUDYBOT_MAINTENANCE || '').trim().toLowerCase() !== 'false';
 
 async function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 
@@ -30,12 +31,19 @@ async function processResource(store, fileStorage, resource) {
 }
 
 async function run() {
+  if (STUDYBOT_MAINTENANCE) {
+    console.log('StudyBot is under maintenance; resource indexing is paused.');
+    return;
+  }
   const store = await createStore({ mongoUri: process.env.MONGODB_URI, databaseName: process.env.MONGODB_DATABASE, dataFile: path.join(DATA_DIR, 'db.json') });
   const fileStorage = await createFileStorage({ storageProvider: process.env.STORAGE_PROVIDER, localRoot: path.join(DATA_DIR, 'uploads'), s3Bucket: process.env.S3_BUCKET || process.env.AWS_S3_BUCKET || process.env.AWS_BUCKET_NAME, s3Key: process.env.S3_KEY || process.env.AWS_ACCESS_KEY_ID, s3Secret: process.env.S3_SECRET || process.env.AWS_SECRET_ACCESS_KEY, s3Endpoint: process.env.S3_ENDPOINT, s3Region: process.env.S3_REGION || process.env.AWS_REGION });
   console.log('Worker started — watching for resources to index.');
   while (true) {
     try {
-      const pending = await store.getResourcesByIndexStatus('pending', 10);
+      const pending = [
+        ...await store.getResourcesByIndexStatus('pending', 10),
+        ...await store.getResourcesByIndexStatus('maintenance', 10)
+      ];
       for (const resource of pending) {
         // process sequentially for simplicity
         await processResource(store, fileStorage, resource);

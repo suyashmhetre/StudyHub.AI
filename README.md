@@ -187,6 +187,10 @@ AWS_REGION=
 
 AWS_BUCKET_NAME=
 
+# StudyBot and resource indexing are paused by default during maintenance.
+# Set to false and redeploy/restart to resume both services.
+STUDYBOT_MAINTENANCE=true
+
 GEMINI_API_KEY=
 
 # Google OAuth (Web application client)
@@ -212,6 +216,8 @@ When deploying on Vercel, configure S3 storage so file bytes bypass the function
 ```
 
 The existing local-storage mode remains available for local development. Supported resources are PDF, DOCX, PPTX, TXT, Markdown, and CSV, up to 20 MB each.
+
+While `STUDYBOT_MAINTENANCE` is enabled (the default), uploads are saved without indexing and StudyBot is unavailable. Set `STUDYBOT_MAINTENANCE=false` in the app and worker environments, then redeploy or restart to resume indexing and StudyBot.
 
 ## Google sign-in setup
 

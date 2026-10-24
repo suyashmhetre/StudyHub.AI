@@ -24,6 +24,7 @@ const PUBLIC_DIR = path.join(ROOT, 'public');
 const DATA_DIR = path.join(ROOT, 'data');
 const PORT = Number(process.env.PORT || 4173);
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
+const STUDYBOT_MAINTENANCE = String(process.env.STUDYBOT_MAINTENANCE || '').trim().toLowerCase() !== 'false';
 const MIME_TYPES = { '.css': 'text/css; charset=utf-8', '.html': 'text/html; charset=utf-8', '.js': 'application/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' };
 const SUPPORTED_EXTENSIONS = new Map([
   ['pdf', 'application/pdf'],
@@ -67,7 +68,7 @@ async function initialize() {
         });
 
         initialized = true;
-        void indexPendingResources();
+        if (!STUDYBOT_MAINTENANCE) void indexPendingResources();
 
         
       } catch (err) {
@@ -205,10 +206,14 @@ async function indexResource(resource, buffer) {
 }
 
 async function indexPendingResources() {
+  if (STUDYBOT_MAINTENANCE) return;
   if (pendingIndexingPromise) return pendingIndexingPromise;
   pendingIndexingPromise = (async () => {
     while (true) {
-      const pendingResources = await store.getResourcesByIndexStatus('pending', 10);
+      const pendingResources = [
+        ...await store.getResourcesByIndexStatus('pending', 10),
+        ...await store.getResourcesByIndexStatus('maintenance', 10)
+      ];
       if (!pendingResources.length) return;
       for (const resource of pendingResources) {
         try {
@@ -228,9 +233,10 @@ async function saveUploadedResource(res, { groupId, user, access, fields, file, 
   if (title.length < 3) return sendError(res, 400, 'A resource title of at least 3 characters is required.');
   const resource = {
     id: id('res'), groupId, title, fileName: file.name, type: file.displayType, mimeType: file.mimeType, storagePath,
-    subject: clampText(fields.subject, 80) || access.group.subject, unit: clampText(fields.unit, 40) || 'General', tags: String(fields.tags || '').split(',').map((tag) => clampText(tag, 24)).filter(Boolean).slice(0, 8), description: clampText(fields.description, 400), size: file.buffer.length, uploaderId: user.id, downloads: 0, indexStatus: 'indexing', indexError: null, textLength: 0, createdAt: now()
+    subject: clampText(fields.subject, 80) || access.group.subject, unit: clampText(fields.unit, 40) || 'General', tags: String(fields.tags || '').split(',').map((tag) => clampText(tag, 24)).filter(Boolean).slice(0, 8), description: clampText(fields.description, 400), size: file.buffer?.length ?? file.size, uploaderId: user.id, downloads: 0, indexStatus: STUDYBOT_MAINTENANCE ? 'maintenance' : 'indexing', indexError: STUDYBOT_MAINTENANCE ? 'Indexing is paused while StudyBot is under maintenance.' : null, textLength: 0, createdAt: now()
   };
   await store.addResource(resource, []);
+  if (STUDYBOT_MAINTENANCE) return sendJson(res, 201, { resource, indexedChunks: 0 });
   const result = await indexResource(resource, file.buffer);
   return sendJson(res, 201, result);
 }
@@ -286,13 +292,22 @@ async function completeDirectResourceUpload(req, res, groupId, user) {
     return sendError(res, 400, 'This upload link has expired or is invalid. Please choose the file again.');
   }
 
-  const buffer = await fileStorage.download(storagePath);
-  if (buffer.length !== fileSize) {
+  let buffer = null;
+  if (STUDYBOT_MAINTENANCE && typeof fileStorage.headObject === 'function') {
+    const object = await fileStorage.headObject(storagePath);
+    if (!object || object.size !== fileSize) {
+      await fileStorage.remove(storagePath);
+      return sendError(res, 400, 'The uploaded file size did not match. Please try again.');
+    }
+  } else {
+    buffer = await fileStorage.download(storagePath);
+  }
+  if (buffer && buffer.length !== fileSize) {
     await fileStorage.remove(storagePath);
     return sendError(res, 400, 'The uploaded file size did not match. Please try again.');
   }
   const displayType = fileName.split('.').pop().toUpperCase();
-  const file = { name: fileName, displayType, mimeType, buffer };
+  const file = { name: fileName, displayType, mimeType, buffer, size: fileSize };
   const fields = {
     title: input.title,
     subject: input.subject,
@@ -325,8 +340,8 @@ async function serveDownload(req, res, resourceId, user) {
 async function handleApi(req, res, pathname) {
   await initialize();
   const { method } = req;
-  if (method === 'GET' && pathname === '/api/health') return sendJson(res, 200, { status: 'ok', database: store.kind, storage: fileStorage.kind, aiConfigured: Boolean(GEMINI_API_KEY) });
-  if (method === 'GET' && pathname === '/api/session') return sendJson(res, 200, { user: safeUser(await sessionUser(req)) });
+  if (method === 'GET' && pathname === '/api/health') return sendJson(res, 200, { status: 'ok', database: store.kind, storage: fileStorage.kind, aiConfigured: Boolean(GEMINI_API_KEY), studyBotMaintenance: STUDYBOT_MAINTENANCE });
+  if (method === 'GET' && pathname === '/api/session') return sendJson(res, 200, { user: safeUser(await sessionUser(req)), studyBotMaintenance: STUDYBOT_MAINTENANCE });
   if (method === 'GET' && pathname === '/api/auth/google') {
     if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) return sendError(res, 503, 'Google sign-in is not configured yet. Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.');
     const state = crypto.randomBytes(32).toString('base64url');
@@ -517,7 +532,9 @@ if (publicJoinMatch && method === "POST") {
     if (method === 'POST') { const input = await readJson(req); const title = clampText(input.title, 150); const body = clampText(input.body, 2000); if (title.length < 3 || body.length < 5) return sendError(res, 400, 'Add a meaningful title and message.'); const discussion = await store.addDiscussion({ id: id('dis'), groupId: discussionMatch[1], authorId: user.id, title, body, replies: [], pinned: false, createdAt: now() }); return sendJson(res, 201, { discussion }); }
   }
   if (method === 'POST' && pathname === '/api/study') {
-    const input = await readJson(req); const access = await groupAccess(req, res, input.groupId, user); if (!access) return;
+    const input = await readJson(req);
+    if (STUDYBOT_MAINTENANCE) return sendError(res, 503, 'StudyBot is under maintenance. Please try again later.');
+    const access = await groupAccess(req, res, input.groupId, user); if (!access) return;
     const action = ['answer', 'flashcards', 'quiz', 'plan'].includes(input.action) ? input.action : 'answer'; const question = clampText(input.question, 400);
     const chunks = await store.searchChunks(access.group.id, question); const workspace = await store.workspace(access.group.id, user.id);
     let pdfBuffer = null;
